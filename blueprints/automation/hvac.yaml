@@ -1,6 +1,6 @@
 blueprint:
-  name: HVAC Control V0
-  description: Control HVAC Automatically
+  name: HVAC Area Control
+  description: Controls an area's HVAC temperatures based on user preferences and current outside temperatures.
   domain: automation
   input:
     temperature_sensor:
