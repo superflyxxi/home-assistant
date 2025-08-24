@@ -10,6 +10,13 @@ blueprint:
         entity:
           filter:
             - device_class: temperature
+    hvac_mode_select:
+      name: HVAC Mode Input Select
+      description: Should support Off, Away, Auto, Guest, or Home
+      selector:
+        entity:
+          filter:
+            - domain: select
     people:
       name: People who use the room
       description: The people who occupy the room and should be considered for activity.
@@ -29,7 +36,7 @@ triggers:
   - trigger: state
     entity_id:
       - zone.home
-      - input_select.hvac_automated
+      - !input hvac_mode_select
       - !input temperature_sensor
       - !input people
   - trigger: state
@@ -62,8 +69,8 @@ actions:
       people_room_entities: |
         {% set ns = namespace(pre=[]) %}
         {% for entity in label_entities(target_area) %}
-        {%   for people in people_in_room %}
-        {%     if entity is match (\".*\"~people~\".*\") %}
+        {%   for person in people_in_room %}
+        {%     if entity is match (\".*\"~person~\".*\") %}
         {%      set ns.pre = ns.pre + [entity] %}
         {%     endif %}
         {%   endfor %}
@@ -122,7 +129,7 @@ actions:
   - choose:
     - conditions:
       - condition: state
-        entity_id: input_select.hvac_automated
+        entity_id: !input hvac_mode_select
         state: 'Off'
       sequence:
       - metadata: {}
@@ -138,10 +145,10 @@ actions:
       - condition: or
         conditions:
         - condition: state
-          entity_id: input_select.hvac_automated
+          entity_id: !input hvac_mode_select
           state: Auto
         - condition: state
-          entity_id: input_select.hvac_automated
+          entity_id: !input hvac_mode_select
           state: Guest
         alias: HVAC Guest or Auto
       - alias: If anyone sleeping
@@ -185,17 +192,17 @@ actions:
       - condition: or
         conditions:
         - condition: state
-          entity_id: input_select.hvac_automated
+          entity_id: !input hvac_mode_select
           state: Away
         - condition: and
           conditions:
           - condition: or
             conditions:
             - condition: state
-              entity_id: input_select.hvac_automated
+              entity_id: !input hvac_mode_select
               state: Auto
             - condition: state
-              entity_id: input_select.hvac_automated
+              entity_id: !input hvac_mode_select
               state: Guest
           - condition: or
             conditions:
@@ -247,17 +254,17 @@ actions:
       - condition: or
         conditions:
         - condition: state
-          entity_id: input_select.hvac_automated
+          entity_id: !input hvac_mode_select
           state: Home
         - condition: and
           conditions:
           - condition: or
             conditions:
             - condition: state
-              entity_id: input_select.hvac_automated
+              entity_id: !input hvac_mode_select
               state: Auto
             - condition: state
-              entity_id: input_select.hvac_automated
+              entity_id: !input hvac_mode_select
               state: Guest
           - alias: If anyone home
             condition: numeric_state
