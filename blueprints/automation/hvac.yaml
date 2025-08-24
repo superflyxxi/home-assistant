@@ -15,8 +15,6 @@ blueprint:
       description: Should support Off, Away, Auto, Guest, or Home
       selector:
         entity:
-          filter:
-            - domain: select
     people:
       name: People who use the room
       description: The people who occupy the room and should be considered for activity.
