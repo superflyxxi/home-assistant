@@ -54,7 +54,7 @@ actions:
       temperature_sensor: !input temperature_sensor
       people: !input people
       people_home: |
-        {{ state_attr('zone.home', 'persons') | map('regex_replace', '^person.') | list }}
+        {{ state_attr('zone.home', 'persons') | intersect(people) | map('regex_replace', '^person.') | list }}
       people_in_room: |
         {{ label_entities(target_area) | select('search', 'schedule.*hvac_schedule') 
         | map('regex_replace', 'schedule.([a-z]+)_hvac_schedule', '\\1') | intersect(people_home) }}
@@ -77,85 +77,48 @@ actions:
         {{ people_room_entities | select('search', 'sleeping') | map('states') | max == 'on' }}
       target_hvac: |
         {{ area_entities(target_area) | select('match', 'climate') | first }}
-      hvac_active_heat: '{% if people_in_room_count > 0 %}
-
-        {%   set inputs = people_room_entities | select(''search'',''input_number.*_hvac_active_heat'')
-        | map(''states'') | map(''int'') | list %}
-
-        {{ (((inputs | sum) + 67*(people_in_room_count-(inputs|length))) / people_in_room_count)
-        | round }}
-
+      hvac_active_heat: |
+        {% if people_in_room_count > 0 %}
+        {%   set inputs = people_room_entities | select('search', 'input_number.*_hvac_active_heat') | map('states') | map('int') | list %}
+        {{ (((inputs | sum) + 67*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
         {% else %}
-
         67
-
         {% endif %}
-
-        '
-      hvac_inactive_heat: '{% if people_in_room_count > 0 %}
-
-        {%   set inputs = people_room_entities | select(''search'',''input_number.*_hvac_inactive_heat'')
-        | map(''states'') | map(''int'') | list %}
-
-        {{ (((inputs | sum) + 63*(people_in_room_count-(inputs|length))) / people_in_room_count)
-        | round }}
-
+      hvac_inactive_heat: |
+        {% if people_in_room_count > 0 %}
+        {%   set inputs = people_room_entities | select('search', 'input_number.*_hvac_inactive_heat') | map('states') | map('int') | list %}
+        {{ (((inputs | sum) + 63*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
         {% else %}
-
         63
-
         {% endif %}
-
-        '
-      hvac_active_cool: '{% if people_in_room_count > 0 %}
-
-        {%   set inputs = people_room_entities | select(''search'',''input_number.*_hvac_active_cool'')
-        | map(''states'') | map(''int'') | list %}
-
-        {{ (((inputs | sum) + 77*(people_in_room_count-(inputs|length))) / people_in_room_count)
-        | round }}
-
+      hvac_active_cool: |
+        {% if people_in_room_count > 0 %}
+        {%   set inputs = people_room_entities | select('search', 'input_number.*_hvac_active_cool') | map('states') | map('int') | list %}
+        {{ (((inputs | sum) + 77*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
         {% else %}
-
         77
-
         {% endif %}
-
-        '
-      hvac_inactive_cool: '{% if people_in_room_count > 0 %}
-
-        {%   set inputs = people_room_entities | select(''search'',''input_number.*_hvac_inactive_cool'')
-        | map(''states'') | map(''int'') | list %}
-
-        {{ (((inputs | sum) + 80*(people_in_room_count-(inputs|length))) / people_in_room_count)
-        | round }}
-
+      hvac_inactive_cool: |
+        {% if people_in_room_count > 0 %}
+        {%   set inputs = people_room_entities | select('search', 'input_number.*_hvac_inactive_cool') | map('states') | map('int') | list %}
+        {{ (((inputs | sum) + 80*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
         {% else %}
-
         80
-
         {% endif %}
-
-        '
-      hvac_sleep_cool: "{% if people_in_room_count > 0 %}\n{%   set inputs = people_room_entities
-        | select('search','input_number.*_hvac_sleep_cool') | map('states') | map('int')
-        | list %} \n{{ (((inputs | sum) + 77*(people_in_room_count-(inputs|length)))
-        / people_in_room_count) | round }}\n{% else %}\n77\n{% endif %}\n"
-      hvac_sleep_heat: '{% if people_in_room_count > 0 %}
-
-        {%   set inputs = people_room_entities | select(''search'',''input_number.*_hvac_sleep_heat'')
-        | map(''states'') | map(''int'') | list %}
-
-        {{ (((inputs | sum) + 63*(people_in_room_count-(inputs|length))) / people_in_room_count)
-        | round }}
-
+      hvac_sleep_cool: |
+        {% if people_in_room_count > 0 %}
+        {%   set inputs = people_room_entities | select('search', 'input_number.*_hvac_sleep_cool') | map('states') | map('int') | list %}
+        {{ (((inputs | sum) + 77*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
         {% else %}
-
-        63
-
+        77
         {% endif %}
-
-        '
+      hvac_sleep_heat: |
+        {% if people_in_room_count > 0 %}
+        {%   set inputs = people_room_entities | select('search', 'input_number.*_hvac_sleep_heat') | map('states') | map('int') | list %}
+        {{ (((inputs | sum) + 63*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %}
+        63
+        {% endif %}
   - choose:
     - conditions:
       - condition: state
