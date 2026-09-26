@@ -1,5 +1,5 @@
 blueprint:
-  name: Dynamic HVAC Room Manager Automation (Single Area)
+  name: Dynamic HVAC Room Manager Automation
   description: >
     Monitors presence, schedules, sleep status, and temperature to automatically set 
     HVAC modes and setpoints for a single specified area.
@@ -7,7 +7,7 @@ blueprint:
   input:
     target_climate:
       name: Target climate
-      description: The target climate
+      description: The target climate control to use.
       selector:
         entity:
           domain: climate
