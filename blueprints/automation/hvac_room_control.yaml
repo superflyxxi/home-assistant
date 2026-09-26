@@ -25,9 +25,15 @@ blueprint:
         entity:
           domain: person
           multiple: true
+    required_entities:
+      name: Required Entities
+      description: Entities that when any are true or on will result in the room being active.
+      selector:
+        entity:
+          multiple: true
     active_entities:
       name: Active Entities
-      description: Entities that when true or on will result in the room being active. This includes the room and people within it.
+      description: Once Required Entities conditions are met and any of these Active Entiteis are are true or on, the climate will be active.
       default: []
       selector:
         entity:
@@ -147,6 +153,8 @@ triggers:
   - trigger: state
     entity_id: !input active_entities
   - trigger: state
+    entity_id: !input required_entities
+  - trigger: state
     entity_id: !input sleeping_sensors
   - triggers: !input other_trigger
 
@@ -167,6 +175,7 @@ actions:
       home_persons: !input home_persons
       target_climate: !input target_climate
       active_entities: !input active_entities
+      required_entities: !input required_entities
 
       current_temp: "{{ states(temp_sensor)|float }}"
       people_home: >
@@ -180,7 +189,7 @@ actions:
           inactive
         {% elif sleeping_sensors | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' %}
           sleep
-        {% elif active_entities | map('states') | max == 'on' or states(hvac_mode_select) == 'Home' %}
+        {% elif (required_entities|map('states')|max=='on' and active_entities|map('states')|max == 'on') or states(hvac_mode_select) == 'Home' %}
           active
         {% else %}
           inactive
