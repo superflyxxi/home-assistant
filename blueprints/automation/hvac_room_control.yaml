@@ -52,6 +52,11 @@ blueprint:
       selector:
         entity:
           domain: input_select
+    other_trigger:
+      name: Other Trigger
+      description: Any other trigger like time of day or other schedule
+      selector:
+        trigger: {}
     hot_weather_temp:
       name: Hot Weather Temperature Threshold
       description: Input number defining the threshold above which cooling is activated.
@@ -136,24 +141,13 @@ max: 10
 triggers:
   - trigger: state
     entity_id: !input hvac_mode_select
-    for:
-      seconds: 50
   - trigger: state
     entity_id: !input home_persons
-    for:
-      seconds: 50
   - trigger: state
     entity_id: !input active_entities
-    for:
-      seconds: 50
   - trigger: state
     entity_id: !input sleeping_sensors
-    for:
-      seconds: 50
-  - trigger: time_pattern
-    hours: "*"
-    minutes: "00"
-    seconds: "00"
+  - triggers: !input other_trigger
 
 conditions:
   - alias: "Prevent running more than once every 30 seconds"
