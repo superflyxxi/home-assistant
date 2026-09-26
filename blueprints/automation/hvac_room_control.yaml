@@ -1,16 +1,15 @@
 blueprint:
-  name: Dynamic HVAC Room Manager Automation
+  name: Dynamic HVAC Room Manager Automation (Single Area)
   description: >
     Monitors presence, schedules, sleep status, and temperature to automatically set 
-    HVAC modes and setpoints across specified areas.
+    HVAC modes and setpoints for a single specified area.
   domain: automation
   input:
-    target_areas:
-      name: Target Areas
-      description: Select all areas to calculate and apply HVAC settings for.
+    target_area:
+      name: Target Area
+      description: Select the single area to calculate and apply HVAC settings for.
       selector:
-        area:
-          multiple: true
+        area: {}
     target_persons:
       name: Tracked Persons
       description: Select person entities to evaluate for presence and room schedules.
@@ -26,9 +25,16 @@ blueprint:
         entity:
           domain: person
           multiple: true
-    schedules_and_sensors:
-      name: Schedules & Sleeping Sensors
-      description: Select room schedule entities, area schedule entities, and sleeping sensors that trigger HVAC recalculations.
+    schedule_entities:
+      name: Schedule Entities
+      description: Select room and area schedule entities/binary sensors that trigger HVAC recalculations.
+      default: []
+      selector:
+        entity:
+          multiple: true
+    sleeping_sensors:
+      name: Sleeping Sensors
+      description: Select sleeping binary sensors or state entities that trigger HVAC recalculations.
       default: []
       selector:
         entity:
@@ -72,7 +78,11 @@ triggers:
     for:
       seconds: 50
   - trigger: state
-    entity_id: !input schedules_and_sensors
+    entity_id: !input schedule_entities
+    for:
+      seconds: 50
+  - trigger: state
+    entity_id: !input sleeping_sensors
     for:
       seconds: 50
   - trigger: time_pattern
@@ -88,334 +98,331 @@ conditions:
          (as_timestamp(now()) - as_timestamp(this.attributes.last_triggered)) > 30 }}
 
 actions:
-  - repeat:
-      for_each: !input target_areas
-      sequence:
-        - variables:
-            target_area: "{{ repeat.item }}"
-            temp_sensor: !input temp_sensor
-            hvac_mode_select: !input hvac_mode_select
-            hot_weather_temp: !input hot_weather_temp
-            cold_weather_temp: !input cold_weather_temp
-            target_persons: !input target_persons
-            adult_persons: !input adult_persons
+  - variables:
+      target_area: !input target_area
+      temp_sensor: !input temp_sensor
+      hvac_mode_select: !input hvac_mode_select
+      hot_weather_temp: !input hot_weather_temp
+      cold_weather_temp: !input cold_weather_temp
+      target_persons: !input target_persons
+      adult_persons: !input adult_persons
 
-            current_temp: "{{ states(temp_sensor) }}"
-            people_home: >
-              {{ target_persons | select('is_state', 'home') | map('regex_replace', '^person\\.', '') | list }}
-            adults_home_count: >
-              {{ adult_persons | select('is_state', 'home') | list | length }}
-            people_in_room: >
-              {{ label_entities(target_area) | select('search', 'schedule.*hvac_schedule') | map('regex_replace', 'schedule.([a-z]+)_hvac_schedule', '\\1') | intersect(people_home) }}
-            people_in_room_count: "{{ people_in_room | length }}"
-            people_room_entities: |
-              {% set ns = namespace(pre=[]) %}
-              {% for entity in label_entities(target_area) %} 
-              {%   for people in people_in_room %}
-              {%     if entity is match (".*"~people~".*") %}
-              {%       set ns.pre = ns.pre + [entity] %}
-              {%     endif %}
-              {%   endfor %}
-              {% endfor %}
-              {{ ns.pre | unique | list }}
-            area_schedule_active: >-
-              {{ states(area_entities(target_area) | select('search', 'schedule') | max) == 'on' }}
-            area_people_active: >-
-              {{ people_room_entities | select('search', 'schedule') | map('states') | max == 'on' }}
-            area_people_sleep: >-
-              {{ people_room_entities | select('search', 'sleeping') | map('states') | max == 'on' }}
-            target_hvac: "{{ area_entities(target_area) | select('match', 'climate') | first }}"
+      current_temp: "{{ states(temp_sensor) }}"
+      people_home: >
+        {{ target_persons | select('is_state', 'home') | map('regex_replace', '^person\\.', '') | list }}
+      adults_home_count: >
+        {{ adult_persons | select('is_state', 'home') | list | length }}
+      people_in_room: >
+        {{ label_entities(target_area) | select('search', 'schedule.*hvac_schedule') | map('regex_replace', 'schedule.([a-z]+)_hvac_schedule', '\\1') | intersect(people_home) }}
+      people_in_room_count: "{{ people_in_room | length }}"
+      people_room_entities: |
+        {% set ns = namespace(pre=[]) %}
+        {% for entity in label_entities(target_area) %} 
+        {%   for people in people_in_room %}
+        {%     if entity is match (".*"~people~".*") %}
+        {%       set ns.pre = ns.pre + [entity] %}
+        {%     endif %}
+        {%   endfor %}
+        {% endfor %}
+        {{ ns.pre | unique | list }}
+      area_schedule_active: >-
+        {{ states(area_entities(target_area) | select('search', 'schedule') | max) == 'on' }}
+      area_people_active: >-
+        {{ people_room_entities | select('search', 'schedule') | map('states') | max == 'on' }}
+      area_people_sleep: >-
+        {{ people_room_entities | select('search', 'sleeping') | map('states') | max == 'on' }}
+      target_hvac: "{{ area_entities(target_area) | select('match', 'climate') | first }}"
 
-            hvac_active_heat: >
-              {% if people_in_room_count > 0 %}
-                {% set inputs = people_room_entities | select('search','input_number.*_hvac_active_heat') | map('states') | map('int') | list %}
-                {{ (((inputs | sum) + 68*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-              {% else %} 68 {% endif %}
-            hvac_inactive_heat: >
-              {% if people_in_room_count > 0 %}
-                {% set inputs = people_room_entities | select('search','input_number.*_hvac_inactive_heat') | map('states') | map('int') | list %}
-                {{ (((inputs | sum) + 64*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-              {% else %} 64 {% endif %}
-            hvac_active_cool: >
-              {% if people_in_room_count > 0 %}
-                {% set inputs = people_room_entities | select('search','input_number.*_hvac_active_cool') | map('states') | map('int') | list %}
-                {{ (((inputs | sum) + 76*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-              {% else %} 76 {% endif %}
-            hvac_inactive_cool: >
-              {% if people_in_room_count > 0 %}
-                {% set inputs = people_room_entities | select('search','input_number.*_hvac_inactive_cool') | map('states') | map('int') | list %}
-                {{ (((inputs | sum) + 80*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-              {% else %} 80 {% endif %}
-            hvac_sleep_cool: >
-              {% if people_in_room_count > 0 %}
-                {% set inputs = people_room_entities | select('search','input_number.*_hvac_sleep_cool') | map('states') | map('int') | list %}
-                {{ (((inputs | sum) + 76*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-              {% else %} 76 {% endif %}
-            hvac_sleep_heat: >
-              {% if people_in_room_count > 0 %}
-                {% set inputs = people_room_entities | select('search','input_number.*_hvac_sleep_heat') | map('states') | map('int') | list %}
-                {{ (((inputs | sum) + 64*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-              {% else %} 64 {% endif %}
+      hvac_active_heat: >
+        {% if people_in_room_count > 0 %}
+          {% set inputs = people_room_entities | select('search','input_number.*_hvac_active_heat') | map('states') | map('int') | list %}
+          {{ (((inputs | sum) + 68*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %} 68 {% endif %}
+      hvac_inactive_heat: >
+        {% if people_in_room_count > 0 %}
+          {% set inputs = people_room_entities | select('search','input_number.*_hvac_inactive_heat') | map('states') | map('int') | list %}
+          {{ (((inputs | sum) + 64*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %} 64 {% endif %}
+      hvac_active_cool: >
+        {% if people_in_room_count > 0 %}
+          {% set inputs = people_room_entities | select('search','input_number.*_hvac_active_cool') | map('states') | map('int') | list %}
+          {{ (((inputs | sum) + 76*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %} 76 {% endif %}
+      hvac_inactive_cool: >
+        {% if people_in_room_count > 0 %}
+          {% set inputs = people_room_entities | select('search','input_number.*_hvac_inactive_cool') | map('states') | map('int') | list %}
+          {{ (((inputs | sum) + 80*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %} 80 {% endif %}
+      hvac_sleep_cool: >
+        {% if people_in_room_count > 0 %}
+          {% set inputs = people_room_entities | select('search','input_number.*_hvac_sleep_cool') | map('states') | map('int') | list %}
+          {{ (((inputs | sum) + 76*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %} 76 {% endif %}
+      hvac_sleep_heat: >
+        {% if people_in_room_count > 0 %}
+          {% set inputs = people_room_entities | select('search','input_number.*_hvac_sleep_heat') | map('states') | map('int') | list %}
+          {{ (((inputs | sum) + 64*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
+        {% else %} 64 {% endif %}
 
-        - if:
-            - condition: template
-              value_template: >-
-                {{ target_hvac is defined and target_hvac != '' and 
-                   (target_area != 'downstairs' or states(hvac_mode_select) != 'Guest') }}
-          then:
-            - choose:
-                # --- OFF MODE ---
-                - conditions:
-                    - condition: state
-                      entity_id: !input hvac_mode_select
-                      state: "Off"
-                  sequence:
-                    - action: climate.set_hvac_mode
-                      target:
-                        entity_id: "{{ target_hvac }}"
-                      data:
-                        hvac_mode: "off"
-                      alias: Turn off
-                  alias: "Off"
+  - if:
+      - condition: template
+        value_template: >-
+          {{ target_hvac is defined and target_hvac != '' and 
+             (target_area != 'downstairs' or states(hvac_mode_select) != 'Guest') }}
+    then:
+      - choose:
+          # --- OFF MODE ---
+          - conditions:
+              - condition: state
+                entity_id: !input hvac_mode_select
+                state: "Off"
+            sequence:
+              - action: climate.set_hvac_mode
+                target:
+                  entity_id: "{{ target_hvac }}"
+                data:
+                  hvac_mode: "off"
+                alias: Turn off
+            alias: "Off"
 
-                # --- SLEEP MODE ---
-                - conditions:
-                    - condition: or
-                      conditions:
-                        - condition: state
-                          entity_id: !input hvac_mode_select
-                          state: Auto
-                        - condition: state
-                          entity_id: !input hvac_mode_select
-                          state: Guest
-                      alias: HVAC Guest or Auto
-                    - alias: If anyone sleeping
-                      condition: template
-                      value_template: "{{ area_people_sleep }}"
-                  sequence:
-                    - choose:
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              above: !input hot_weather_temp
-                          sequence:
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                temperature: "{{ hvac_sleep_cool }}"
-                                hvac_mode: cool
-                              alias: Cool to desired sleep
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              above: !input cold_weather_temp
-                          sequence:
-                            - action: climate.set_hvac_mode
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: "off"
-                              enabled: false
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: auto
-                                temperature: 72
-                              alias: Auto 72
-                              enabled: false
-                            - action: climate.set_hvac_mode
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: fan_only
-                              enabled: true
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              below: !input cold_weather_temp
-                          sequence:
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                temperature: "{{ hvac_sleep_heat }}"
-                                hvac_mode: heat
-                              alias: Heat to desired sleep
-                      enabled: true
-                    - action: climate.set_fan_mode
-                      target:
-                        entity_id: "{{ target_hvac }}"
-                      data:
-                        fan_mode: auto
-                  alias: Sleep
+          # --- SLEEP MODE ---
+          - conditions:
+              - condition: or
+                conditions:
+                  - condition: state
+                    entity_id: !input hvac_mode_select
+                    state: Auto
+                  - condition: state
+                    entity_id: !input hvac_mode_select
+                    state: Guest
+                alias: HVAC Guest or Auto
+              - alias: If anyone sleeping
+                condition: template
+                value_template: "{{ area_people_sleep }}"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        above: !input hot_weather_temp
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          temperature: "{{ hvac_sleep_cool }}"
+                          hvac_mode: cool
+                        alias: Cool to desired sleep
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        above: !input cold_weather_temp
+                    sequence:
+                      - action: climate.set_hvac_mode
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: "off"
+                        enabled: false
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: auto
+                          temperature: 72
+                        alias: Auto 72
+                        enabled: false
+                      - action: climate.set_hvac_mode
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: fan_only
+                        enabled: true
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        below: !input cold_weather_temp
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          temperature: "{{ hvac_sleep_heat }}"
+                          hvac_mode: heat
+                        alias: Heat to desired sleep
+                enabled: true
+              - action: climate.set_fan_mode
+                target:
+                  entity_id: "{{ target_hvac }}"
+                data:
+                  fan_mode: auto
+            alias: Sleep
 
-                # --- INACTIVE MODE ---
-                - conditions:
-                    - condition: or
-                      conditions:
-                        - condition: state
-                          entity_id: !input hvac_mode_select
-                          state: Away
-                        - condition: and
-                          conditions:
-                            - condition: or
-                              conditions:
-                                - condition: state
-                                  entity_id: !input hvac_mode_select
-                                  state: Auto
-                                - condition: state
-                                  entity_id: !input hvac_mode_select
-                                  state: Guest
-                            - condition: or
-                              conditions:
-                                - alias: If no required adults home
-                                  condition: template
-                                  value_template: "{{ adult_persons | length > 0 and adults_home_count == 0 }}"
-                                - alias: If everyone home is inactive
-                                  condition: template
-                                  value_template: "{{ not area_people_active }}"
-                                - alias: If area schedule inactive
-                                  condition: template
-                                  value_template: "{{ not area_schedule_active }}"
-                  sequence:
-                    - choose:
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              above: !input hot_weather_temp
-                          sequence:
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                temperature: "{{ hvac_inactive_cool }}"
-                                hvac_mode: cool
-                              alias: Cool to desired inactive
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              above: !input cold_weather_temp
-                          sequence:
-                            - action: climate.set_hvac_mode
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: fan_only
-                              enabled: false
-                            - action: climate.set_hvac_mode
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: "off"
-                              enabled: true
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: auto
-                                temperature: 72
-                              alias: Auto 72
-                              enabled: false
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              below: !input cold_weather_temp
-                          sequence:
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                temperature: "{{ hvac_inactive_heat }}"
-                                hvac_mode: heat
-                              alias: Heat to desired inactive
-                      enabled: true
-                    - action: climate.set_fan_mode
-                      target:
-                        entity_id: "{{ target_hvac }}"
-                      data:
-                        fan_mode: auto
-                      enabled: true
-                  alias: Inactive
+          # --- INACTIVE MODE ---
+          - conditions:
+              - condition: or
+                conditions:
+                  - condition: state
+                    entity_id: !input hvac_mode_select
+                    state: Away
+                  - condition: and
+                    conditions:
+                      - condition: or
+                        conditions:
+                          - condition: state
+                            entity_id: !input hvac_mode_select
+                            state: Auto
+                          - condition: state
+                            entity_id: !input hvac_mode_select
+                            state: Guest
+                      - condition: or
+                        conditions:
+                          - alias: If no required adults home
+                            condition: template
+                            value_template: "{{ adult_persons | length > 0 and adults_home_count == 0 }}"
+                          - alias: If everyone home is inactive
+                            condition: template
+                            value_template: "{{ not area_people_active }}"
+                          - alias: If area schedule inactive
+                            condition: template
+                            value_template: "{{ not area_schedule_active }}"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        above: !input hot_weather_temp
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          temperature: "{{ hvac_inactive_cool }}"
+                          hvac_mode: cool
+                        alias: Cool to desired inactive
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        above: !input cold_weather_temp
+                    sequence:
+                      - action: climate.set_hvac_mode
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: fan_only
+                        enabled: false
+                      - action: climate.set_hvac_mode
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: "off"
+                        enabled: true
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: auto
+                          temperature: 72
+                        alias: Auto 72
+                        enabled: false
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        below: !input cold_weather_temp
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          temperature: "{{ hvac_inactive_heat }}"
+                          hvac_mode: heat
+                        alias: Heat to desired inactive
+                enabled: true
+              - action: climate.set_fan_mode
+                target:
+                  entity_id: "{{ target_hvac }}"
+                data:
+                  fan_mode: auto
+                enabled: true
+            alias: Inactive
 
-                # --- ACTIVE MODE ---
-                - conditions:
-                    - condition: or
-                      conditions:
-                        - condition: state
-                          entity_id: !input hvac_mode_select
-                          state: Home
-                        - condition: and
-                          conditions:
-                            - condition: or
-                              conditions:
-                                - condition: state
-                                  entity_id: !input hvac_mode_select
-                                  state: Auto
-                                - condition: state
-                                  entity_id: !input hvac_mode_select
-                                  state: Guest
-                            - alias: If anyone home
-                              condition: template
-                              value_template: "{{ people_home | length > 0 }}"
-                            - alias: If anyone home is active
-                              condition: template
-                              value_template: "{{ area_people_active }}"
-                            - alias: If area schedule active
-                              condition: template
-                              value_template: "{{ area_schedule_active }}"
-                  sequence:
-                    - choose:
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              above: !input hot_weather_temp
-                          sequence:
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                temperature: "{{ hvac_active_cool }}"
-                                hvac_mode: cool
-                              alias: Cool to preferred active
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              above: !input cold_weather_temp
-                          sequence:
-                            - action: climate.set_hvac_mode
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: "off"
-                              enabled: true
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                hvac_mode: auto
-                                temperature: 72
-                              alias: Auto 72
-                              enabled: false
-                        - conditions:
-                            - condition: numeric_state
-                              entity_id: !input temp_sensor
-                              below: !input cold_weather_temp
-                          sequence:
-                            - action: climate.set_temperature
-                              target:
-                                entity_id: "{{ target_hvac }}"
-                              data:
-                                temperature: "{{ hvac_active_heat }}"
-                                hvac_mode: heat
-                              alias: Heat to preferred active
-                      enabled: true
-                    - action: climate.set_fan_mode
-                      target:
-                        entity_id: "{{ target_hvac }}"
-                      data:
-                        fan_mode: auto
-                      enabled: true
-                  alias: Active
-              enabled: true
+          # --- ACTIVE MODE ---
+          - conditions:
+              - condition: or
+                conditions:
+                  - condition: state
+                    entity_id: !input hvac_mode_select
+                    state: Home
+                  - condition: and
+                    conditions:
+                      - condition: or
+                        conditions:
+                          - condition: state
+                            entity_id: !input hvac_mode_select
+                            state: Auto
+                          - condition: state
+                            entity_id: !input hvac_mode_select
+                            state: Guest
+                      - alias: If anyone home
+                        condition: template
+                        value_template: "{{ people_home | length > 0 }}"
+                      - alias: If anyone home is active
+                        condition: template
+                        value_template: "{{ area_people_active }}"
+                      - alias: If area schedule active
+                        condition: template
+                        value_template: "{{ area_schedule_active }}"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        above: !input hot_weather_temp
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          temperature: "{{ hvac_active_cool }}"
+                          hvac_mode: cool
+                        alias: Cool to preferred active
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        above: !input cold_weather_temp
+                    sequence:
+                      - action: climate.set_hvac_mode
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: "off"
+                        enabled: true
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          hvac_mode: auto
+                          temperature: 72
+                        alias: Auto 72
+                        enabled: false
+                  - conditions:
+                      - condition: numeric_state
+                        entity_id: !input temp_sensor
+                        below: !input cold_weather_temp
+                    sequence:
+                      - action: climate.set_temperature
+                        target:
+                          entity_id: "{{ target_hvac }}"
+                        data:
+                          temperature: "{{ hvac_active_heat }}"
+                          hvac_mode: heat
+                        alias: Heat to preferred active
+                enabled: true
+              - action: climate.set_fan_mode
+                target:
+                  entity_id: "{{ target_hvac }}"
+                data:
+                  fan_mode: auto
+                enabled: true
+            alias: Active
+        enabled: true
