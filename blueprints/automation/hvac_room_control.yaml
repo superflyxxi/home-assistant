@@ -162,14 +162,17 @@ triggers:
     entity_id: !input sleeping_sensors
   - triggers: !input other_trigger
 
-conditions:
-  - alias: "Prevent running more than once every 30 seconds"
-    condition: template
-    value_template: >-
-      {{ this.attributes.last_triggered is none or 
-         (as_timestamp(now()) - as_timestamp(this.attributes.last_triggered)) > 30 }}
-
 actions:
+  - alias: "Throttle: Wait if last triggered less than 60 seconds ago"
+    if:
+      - condition: template
+        value_template: >-
+          {{ this.attributes.last_triggered is not none and 
+             (as_timestamp(now()) - as_timestamp(this.attributes.last_triggered)) < 60 }}
+    then:
+      - delay:
+          seconds: >-
+            {{ (60 - as_timestamp(now()) - as_timestamp(this.attributes.last_triggered)) | max(0) | round(0) }}
   - variables:
       is_guest_supported: !input enable_guest
       temp_sensor: !input temp_sensor
