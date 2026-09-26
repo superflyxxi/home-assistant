@@ -11,11 +11,12 @@ blueprint:
       selector:
         entity:
           domain: climate
-    target_area:
-      name: Target Area
-      description: Select the single area to calculate and apply HVAC settings for.
+    enable_guest:
+      name: Enable Guest Mode
+      description: Support guest mode for this.
+      default: false
       selector:
-        area: {}
+        boolean: {}
     target_persons:
       name: Tracked Persons
       description: Select person entities to evaluate for presence and room schedules.
@@ -23,9 +24,9 @@ blueprint:
         entity:
           domain: person
           multiple: true
-    adult_persons:
-      name: Adult Persons (Optional)
-      description: Select adult persons required to be home for active HVAC mode (if none are home, defaults to inactive).
+    home_persons:
+      name: Home Persons
+      description: Select persons required to be home for active HVAC mode (if none are home, defaults to inactive).
       default: []
       selector:
         entity:
@@ -90,6 +91,16 @@ blueprint:
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
+    default_heat_sleep_temp:
+      name: Default Heat Sleeping Temperature
+      default: 66
+      selector:
+        number:
+          min: 60
+          max: 70
+          step: 1
+          unit_of_measurement: "°F" # or "°C"
+          mode: slider              # Options: "slider" or "box"
     default_cool_active_temp:
       name: Default cool active Temperature
       default: 76
@@ -110,6 +121,16 @@ blueprint:
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
+    default_cool_sleep_temp:
+      name: Default Cool Sleeping Temperature
+      default: 78
+      selector:
+        number:
+          min: 70
+          max: 80
+          step: 1
+          unit_of_measurement: "°F" # or "°C"
+          mode: slider              # Options: "slider" or "box"
 mode: queued
 max: 10
 
@@ -119,7 +140,7 @@ triggers:
     for:
       seconds: 50
   - trigger: state
-    entity_id: !input target_persons
+    entity_id: !input home_persons
     for:
       seconds: 50
   - trigger: state
@@ -144,80 +165,37 @@ conditions:
 
 actions:
   - variables:
-      target_area: !input target_area
+      is_guest_supported: !input enable_guest
       temp_sensor: !input temp_sensor
       hvac_mode_select: !input hvac_mode_select
       hot_weather_temp: !input hot_weather_temp
       cold_weather_temp: !input cold_weather_temp
       target_persons: !input target_persons
-      adult_persons: !input adult_persons
+      home_persons: !input home_persons
       target_climate: !input target_climate
-      default_heat_active: !input default_heat_active_temp
-      default_heat_inactive: !input default_heat_inactive_temp 
-      default_cool_active: !input default_cool_active_temp
-      default_cool_inactive: !input default_cool_inactive_temp
+      active_entities: !input schedule_entities
 
       current_temp: "{{ states(temp_sensor) }}"
       people_home: >
-        {{ target_persons | select('is_state', 'home') | map('regex_replace', '^person\\.', '') | list }}
-      adults_home_count: >
-        {{ adult_persons | select('is_state', 'home') | list | length }}
+        {{ home_persons | select('is_state', 'home') | list }}
       people_in_room: >
-        {{ label_entities(target_area) | select('search', 'schedule.*hvac_schedule') | map('regex_replace', 'schedule.([a-z]+)_hvac_schedule', '\\1') | intersect(people_home) }}
-      people_in_room_count: "{{ people_in_room | length }}"
-      people_room_entities: |
-        {% set ns = namespace(pre=[]) %}
-        {% for entity in label_entities(target_area) %} 
-        {%   for people in people_in_room %}
-        {%     if entity is match (".*"~people~".*") %}
-        {%       set ns.pre = ns.pre + [entity] %}
-        {%     endif %}
-        {%   endfor %}
-        {% endfor %}
-        {{ ns.pre | unique | list }}
-      area_schedule_active: >-
-        {{ states(area_entities(target_area) | select('search', 'schedule') | max) == 'on' }}
-      area_people_active: >-
-        {{ people_room_entities | select('search', 'schedule') | map('states') | max == 'on' }}
-      area_people_sleep: >-
-        {{ people_room_entities | select('search', 'sleeping') | map('states') | max == 'on' }}
-
-      hvac_active_heat: >
-        {% if people_in_room_count > 0 %}
-          {% set inputs = people_room_entities | select('search','input_number.*_hvac_active_heat') | map('states') | map('int') | list %}
-          {{ (((inputs | sum) + default_heat_active_temp*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-        {% else %} {{ default_heat_active_temp}}  {% endif %}
-      hvac_inactive_heat: >
-        {% if people_in_room_count > 0 %}
-          {% set inputs = people_room_entities | select('search','input_number.*_hvac_inactive_heat') | map('states') | map('int') | list %}
-          {{ (((inputs | sum) + 64*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-        {% else %} 64 {% endif %}
-      hvac_active_cool: >
-        {% if people_in_room_count > 0 %}
-          {% set inputs = people_room_entities | select('search','input_number.*_hvac_active_cool') | map('states') | map('int') | list %}
-          {{ (((inputs | sum) + 76*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-        {% else %} 76 {% endif %}
-      hvac_inactive_cool: >
-        {% if people_in_room_count > 0 %}
-          {% set inputs = people_room_entities | select('search','input_number.*_hvac_inactive_cool') | map('states') | map('int') | list %}
-          {{ (((inputs | sum) + 80*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-        {% else %} 80 {% endif %}
-      hvac_sleep_cool: >
-        {% if people_in_room_count > 0 %}
-          {% set inputs = people_room_entities | select('search','input_number.*_hvac_sleep_cool') | map('states') | map('int') | list %}
-          {{ (((inputs | sum) + 76*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-        {% else %} 76 {% endif %}
-      hvac_sleep_heat: >
-        {% if people_in_room_count > 0 %}
-          {% set inputs = people_room_entities | select('search','input_number.*_hvac_sleep_heat') | map('states') | map('int') | list %}
-          {{ (((inputs | sum) + 64*(people_in_room_count-(inputs|length))) / people_in_room_count) | round }}
-        {% else %} 64 {% endif %}
+        {{ target_persons | select('is_state', 'home') | list }}
+      is_active: >-
+        {{ active_entities | map('states') | max == 'on' }}
+      is_sleep: >-
+        {{ sleeping_sensors | map('states') | max == 'on' }}
+      hvac_active_heat: !input default_heat_active_temp
+      hvac_inactive_heat: !input default_heat_inactive_temp
+      hvac_sleep_heat: !input default_heat_sleep_temp
+      hvac_active_cool: !input default_cool_active_temp
+      hvac_inactive_cool: !input default_cool_inactive_temp
+      hvac_sleep_cool: !input default_cool_sleep_temp
 
   - if:
       - condition: template
         value_template: >-
           {{ target_climate is defined and target_climate != '' and 
-             (target_area != 'downstairs' or states(hvac_mode_select) != 'Guest') }}
+             is_guest_supported and states(hvac_mode_select) != 'Guest' }}
     then:
       - choose:
           # --- OFF MODE ---
@@ -247,7 +225,7 @@ actions:
                 alias: HVAC Guest or Auto
               - alias: If anyone sleeping
                 condition: template
-                value_template: "{{ area_people_sleep }}"
+                value_template: "{{ is_sleep }}"
             sequence:
               - choose:
                   - conditions:
@@ -328,13 +306,10 @@ actions:
                         conditions:
                           - alias: If no required adults home
                             condition: template
-                            value_template: "{{ adult_persons | length > 0 and adults_home_count == 0 }}"
-                          - alias: If everyone home is inactive
+                            value_template: "{{ people_home | length == 0 }}"
+                          - alias: If inactive
                             condition: template
-                            value_template: "{{ not area_people_active }}"
-                          - alias: If area schedule inactive
-                            condition: template
-                            value_template: "{{ not area_schedule_active }}"
+                            value_template: "{{ not is_active }}"
             sequence:
               - choose:
                   - conditions:
@@ -415,12 +390,9 @@ actions:
                       - alias: If anyone home
                         condition: template
                         value_template: "{{ people_home | length > 0 }}"
-                      - alias: If anyone home is active
+                      - alias: If is active
                         condition: template
-                        value_template: "{{ area_people_active }}"
-                      - alias: If area schedule active
-                        condition: template
-                        value_template: "{{ area_schedule_active }}"
+                        value_template: "{{ is_active }}"
             sequence:
               - choose:
                   - conditions:
