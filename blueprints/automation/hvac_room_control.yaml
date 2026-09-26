@@ -183,8 +183,8 @@ actions:
       this_mode: >-
         {% if states(hvac_mode_select) == 'Off' %}
           off
-        {% elif is_guest_supported and states(hvac_mode_select) == 'Guest' %}
-          guest
+        {% elif (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+          noop
         {% elif people_home|length == 0 or states(hvac_mode_select) == 'Away' %}
           inactive
         {% elif sleeping_sensors | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' %}
@@ -212,7 +212,7 @@ actions:
   - if:
       - condition: template
         value_template: >-
-          {{ target_climate is defined and target_climate != '' and this_mode != 'guest' }}
+          {{ target_climate is defined and target_climate != '' and this_mode != 'noop' }}
     then:
       - choose:
           # --- OFF MODE ---
