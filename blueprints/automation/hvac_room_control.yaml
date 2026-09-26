@@ -13,17 +13,10 @@ blueprint:
           domain: climate
     enable_guest:
       name: Enable Guest Mode
-      description: Support guest mode for this.
+      description: Support guest mode. When enable and Guest mode is activated, the target climate will not change.
       default: false
       selector:
         boolean: {}
-    target_persons:
-      name: Tracked Persons
-      description: Select person entities to evaluate for presence and room schedules.
-      selector:
-        entity:
-          domain: person
-          multiple: true
     home_persons:
       name: Home Persons
       description: Select persons required to be home for active HVAC mode (if none are home, defaults to inactive).
@@ -170,7 +163,6 @@ actions:
       hvac_mode_select: !input hvac_mode_select
       hot_weather_temp: !input hot_weather_temp
       cold_weather_temp: !input cold_weather_temp
-      target_persons: !input target_persons
       home_persons: !input home_persons
       target_climate: !input target_climate
       active_entities: !input schedule_entities
@@ -178,8 +170,6 @@ actions:
       current_temp: "{{ states(temp_sensor) }}"
       people_home: >
         {{ home_persons | select('is_state', 'home') | list }}
-      people_in_room: >
-        {{ target_persons | select('is_state', 'home') | list }}
       is_active: >-
         {{ active_entities | map('states') | max == 'on' }}
       is_sleep: >-
