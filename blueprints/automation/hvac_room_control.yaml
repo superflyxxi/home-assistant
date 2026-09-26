@@ -55,6 +55,7 @@ blueprint:
     other_trigger:
       name: Other Trigger
       description: Any other trigger like time of day or other schedule
+      default: []
       selector:
         trigger: {}
     hot_weather_temp:
