@@ -156,6 +156,12 @@ triggers:
       seconds: 60
   - trigger: state
     entity_id: !input home_persons
+    from: "home"
+    for:
+      seconds: 60
+  - trigger: state
+    entity_id: !input home_persons
+    to: "home"
     for:
       seconds: 60
   - trigger: state
