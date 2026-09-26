@@ -148,8 +148,12 @@ max: 10
 triggers:
   - trigger: state
     entity_id: !input hvac_mode_select
+    for:
+      seconds: 50
   - trigger: state
     entity_id: !input home_persons
+    for:
+      seconds: 50
   - trigger: state
     entity_id: !input active_entities
   - trigger: state
