@@ -25,8 +25,8 @@ blueprint:
         entity:
           domain: person
           multiple: true
-    schedule_entities:
-      name: Schedule Entities
+    active_entities:
+      name: Actvie Entities
       description: Entities that when true or on will result in the room being active. This includes the room and people within it.
       default: []
       selector:
@@ -66,6 +66,7 @@ blueprint:
           domain: input_number
     default_heat_active_temp:
       name: Default Heat Active Temperature
+      description: The desired target temperature when heating and active.
       default: 68
       selector:
         number:
@@ -76,6 +77,7 @@ blueprint:
           mode: slider              # Options: "slider" or "box"
     default_heat_inactive_temp:
       name: Default Heat Inactive Temperature
+      description: The desired target temperature when heating and inactive.
       default: 64
       selector:
         number:
@@ -86,6 +88,7 @@ blueprint:
           mode: slider              # Options: "slider" or "box"
     default_heat_sleep_temp:
       name: Default Heat Sleeping Temperature
+      description: The desired target temperature when heating and sleeping.
       default: 66
       selector:
         number:
@@ -95,7 +98,8 @@ blueprint:
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
     default_cool_active_temp:
-      name: Default cool active Temperature
+      name: Default Cool Active Temperature
+      description: The desired target temperature when cooling and active.
       default: 76
       selector:
         number:
@@ -106,6 +110,7 @@ blueprint:
           mode: slider              # Options: "slider" or "box"
     default_cool_inactive_temp:
       name: Default Cool Inactive Temperature
+      description: The desired target temperature when cooling and inactive.
       default: 80
       selector:
         number:
@@ -116,6 +121,7 @@ blueprint:
           mode: slider              # Options: "slider" or "box"
     default_cool_sleep_temp:
       name: Default Cool Sleeping Temperature
+      description: The desired target temperature when cooling and sleeping.
       default: 78
       selector:
         number:
@@ -137,7 +143,7 @@ triggers:
     for:
       seconds: 50
   - trigger: state
-    entity_id: !input schedule_entities
+    entity_id: !input active_entities
     for:
       seconds: 50
   - trigger: state
@@ -165,7 +171,7 @@ actions:
       cold_weather_temp: !input cold_weather_temp
       home_persons: !input home_persons
       target_climate: !input target_climate
-      active_entities: !input schedule_entities
+      active_entities: !input active_entities
 
       current_temp: "{{ states(temp_sensor) }}"
       people_home: >
