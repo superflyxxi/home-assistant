@@ -1,0 +1,44 @@
+blueprint:
+  name: Vacuum on a schedule
+  description: Enables a robot vacuum to run on a schedule
+  domain: automation
+  input:
+    vacuum:
+      selector:
+        entity:
+          filter:
+            - domain: vacuum
+    schedule:
+      selector:
+        entity:
+mode: single
+triggers:
+  - trigger: state
+    to: null
+    entity_id:
+      - !input schedule
+conditions: []
+actions:
+  - choose:
+      - conditions:
+          - condition: state
+            state: "on"
+            entity_id: !input schedule
+        sequence:
+          - action: vacuum.start
+            target:
+              entity_id: !input vacuum
+      - conditions:
+          - condition: and
+            conditions:
+              - condition: state
+                state: "off"
+                entity_id: !input schedule
+              - condition: state
+                entity_id: !input vacuum
+                state:
+                  - cleaning
+        sequence:
+          - action: vacuum.return_to_base
+            target:
+              entity_id: !input vacuum
