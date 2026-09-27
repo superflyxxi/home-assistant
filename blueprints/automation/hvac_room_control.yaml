@@ -7,25 +7,25 @@ blueprint:
   input:
     target_climate:
       name: Target climate
-      description: The target climate control to use.
+      description: The target climate control to set.
       selector:
         entity:
           domain: climate
     enable_guest:
       name: Enable Guest Mode
-      description: Support guest mode. When enable and Guest mode is activated, the target climate will not change.
+      description: When enabled and Guest mode is activated, the target climate will not change.
       default: false
       selector:
         boolean: {}
     enable_turn_off_target_temp:
       name: Enable Turning Off Climate on Target Temperature
-      description: When the target temperature is reached, turn off the climate instead of let it run.
+      description: When the target temperature is reached, turn off the climate instead of let it run. This is useful for rooms where the blowing of air can feel uncomfortable.
       default: false
       selector:
         boolean: {}
     home_persons:
       name: Home Persons
-      description: Select persons required to be home for active HVAC mode (if none are home, defaults to inactive).
+      description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
       default: []
       selector:
         entity:
@@ -33,27 +33,27 @@ blueprint:
           multiple: true
     required_entities:
       name: Required Entities
-      description: Entities that when any are true or on will result in the room being active.
+      description: Entities that when any are "on" will result in the room being active.
       selector:
         entity:
           multiple: true
     active_entities:
       name: Active Entities
-      description: Once Required Entities conditions are met and any of these Active Entiteis are are true or on, the climate will be active.
+      description: Once Required Entities conditions are met and any of these Active Entities are "on", the climate will be active.
       default: []
       selector:
         entity:
           multiple: true
     sleeping_sensors:
       name: Sleeping Sensors
-      description: Select sleeping binary sensors or state entities that trigger HVAC recalculations.
+      description: Select sleeping sensors that determine whether anyone in the room is sleeping (sensor "on") and to set target sleep temperatures.
       default: []
       selector:
         entity:
           multiple: true
     outdoor_temp_sensor:
       name: Outdoor Temperature Sensor
-      description: Sensor used to monitor current ambient/outdoor temperature.
+      description: Sensor used to monitor current outdoor temperature to determine heat/cool/mid modes.
       selector:
         entity:
           domain: sensor
@@ -66,7 +66,7 @@ blueprint:
           domain: input_select
     other_trigger:
       name: Other Trigger
-      description: Any other trigger like time of day or other schedule
+      description: Any other trigger like time of day or other schedule.
       default: []
       selector:
         trigger: {}
@@ -89,7 +89,7 @@ blueprint:
       selector:
         number:
           min: 60
-          max: 70
+          max: 75
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
@@ -100,7 +100,7 @@ blueprint:
       selector:
         number:
           min: 60
-          max: 70
+          max: 75
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
@@ -111,7 +111,7 @@ blueprint:
       selector:
         number:
           min: 60
-          max: 70
+          max: 75
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
@@ -122,7 +122,7 @@ blueprint:
       selector:
         number:
           min: 70
-          max: 80
+          max: 85
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
@@ -133,7 +133,7 @@ blueprint:
       selector:
         number:
           min: 70
-          max: 80
+          max: 85
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
@@ -144,7 +144,7 @@ blueprint:
       selector:
         number:
           min: 70
-          max: 80
+          max: 85
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
@@ -152,30 +152,37 @@ mode: queued
 max: 10
 
 triggers:
+  # Current temperatur of target climate changes at least for 60s.
   - trigger: state
     entity_id: !input target_climate
     attribute: current_temperature
+    for:
+      seconds: 60
+  # Outdoor temperature sensor changes for 60s
   - trigger: state
     entity_id: !input outdoor_temp_sensor
     to: null
     for:
       seconds: 60
+  # The mode is changed
   - trigger: state
     entity_id: !input hvac_mode_select
     to: null
-    for:
-      seconds: 60
+  # When people state changes for at least 60s
   - trigger: state
     entity_id: !input home_persons
     to: null
     for:
       seconds: 60
-  - trigger: state
-    to: null
-    entity_id: !input active_entities
+  # Required entities change state
   - trigger: state
     to: null
     entity_id: !input required_entities
+  # Active entities change state
+  - trigger: state
+    to: null
+    entity_id: !input active_entities
+  # Sleeping sensors change state
   - trigger: state
     to: null
     entity_id: !input sleeping_sensors
@@ -263,11 +270,11 @@ actions:
                 value_template: "{{ this_mode == 'off' }}"
             sequence:
               - action: climate.set_hvac_mode
+                alias: Turn off
                 target:
                   entity_id: "{{ target_climate }}"
                 data:
                   hvac_mode: "off"
-                alias: Turn off
 
           # --- SLEEP MODE ---
           - alias: Sleep
