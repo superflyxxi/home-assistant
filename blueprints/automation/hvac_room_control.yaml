@@ -193,6 +193,12 @@ actions:
       target_climate: !input target_climate
       active_entities: !input active_entities
       required_entities: !input required_entities
+      hvac_active_heat_temp: !input default_heat_active_temp
+      hvac_active_cool_temp: !input default_cool_active_temp
+      hvac_inactive_heat_temp: !input default_heat_inactive_temp
+      hvac_inactive_cool_temp: !input default_cool_inactive_temp
+      hvac_sleep_heat_temp: !input default_heat_sleep_temp
+      hvac_sleep_cool_temp: !input default_cool_sleep_temp
 
       current_temp: "{{ states(temp_sensor)|float }}"
       people_home: >
@@ -219,12 +225,6 @@ actions:
         {% else %}
           mid
         {% endif %}
-      hvac_active_heat_temp: !input default_heat_active_temp
-      hvac_active_cool_temp: !input default_cool_active_temp
-      hvac_inactive_heat_temp: !input default_heat_inactive_temp
-      hvac_inactive_cool_temp: !input default_cool_inactive_temp
-      hvac_sleep_heat_temp: !input default_heat_sleep_temp
-      hvac_sleep_cool_temp: !input default_cool_sleep_temp
 
   - if:
       - condition: template
