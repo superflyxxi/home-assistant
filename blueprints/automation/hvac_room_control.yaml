@@ -17,6 +17,12 @@ blueprint:
       default: false
       selector:
         boolean: {}
+    enable_turn_off_target_temp:
+      name: Enable Turning Off Climate on Target Temperature
+      description: When the target temperature is reached, turn off the climate instead of let it run.
+      default: false
+      selector:
+        boolean: {}
     home_persons:
       name: Home Persons
       description: Select persons required to be home for active HVAC mode (if none are home, defaults to inactive).
@@ -45,8 +51,8 @@ blueprint:
       selector:
         entity:
           multiple: true
-    temp_sensor:
-      name: Temperature Sensor
+    outdoor_temp_sensor:
+      name: Outdoor Temperature Sensor
       description: Sensor used to monitor current ambient/outdoor temperature.
       selector:
         entity:
@@ -147,7 +153,10 @@ max: 10
 
 triggers:
   - trigger: state
-    entity_id: !input temp_sensor
+    entity_id: !input target_climate
+    attribute: current_temperature
+  - trigger: state
+    entity_id: !input outdoor_temp_sensor
     to: null
     for:
       seconds: 60
@@ -185,7 +194,7 @@ actions:
             {{ (60 - as_timestamp(now()) + as_timestamp(this.attributes.last_triggered))|round(0) }}
   - variables:
       is_guest_supported: !input enable_guest
-      temp_sensor: !input temp_sensor
+      outdoor_temp_sensor: !input outdoor_temp_sensor
       hvac_mode_select: !input hvac_mode_select
       hot_weather_temp_entity: !input hot_weather_temp
       cold_weather_temp_entity: !input cold_weather_temp
@@ -199,15 +208,38 @@ actions:
       hvac_inactive_cool_temp: !input default_cool_inactive_temp
       hvac_sleep_heat_temp: !input default_heat_sleep_temp
       hvac_sleep_cool_temp: !input default_cool_sleep_temp
+      is_turnoff_on_temp_supported: !input enable_turn_off_target_temp
 
-      current_temp: "{{ states(temp_sensor)|float }}"
+      target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(72) }}"
+      outdoor_temp: "{{ states(outdoor_temp_sensor)|float }}"
       people_home: >
         {{ home_persons | select('is_state', 'home') | list }}
+      this_hvac_mode: >-
+        {% if outdoor_temp > states(hot_weather_temp_entity)|float(72) %}
+          cool
+        {% elif outdoor_temp < states(cold_weather_temp_entity)|float(72) %}
+          heat
+        {% else %}
+          mid
+        {% endif %}
+      # mode is based on the following
+      # 1. If select input is off; then off
+      # 2. if guest or manual; then noop or no changes
+      # 3. if turn off when target temp is reached and new mode is matching existing mode
+      #   if heating and current > target; then off
+      #   if cooling and current < target; then off
+      #   otherwise, continue
+      # 4. no one home or hvac mode is away; then inactive
+      # 5. if at least one sleeping sensor on or hvac mode is sleep; sleep
+      # 6. if at least one required sensor is on and at least one active sensor is on; then active
+      # otherwise inactive
       this_mode: >-
         {% if states(hvac_mode_select) == 'Off' %}
           off
         {% elif (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
+        {% elif is_turnoff_on_temp_supported and this_hvac_mode == states(target_climate) and ((this_hvac_mode == 'heat' and target_climate_current_temp > state_attr(target_climate, 'temperature')|float(72)) or (this_hvac_mode == 'cool' and target_climate_current_temp < state_attr(target_climate, 'temperature')|float(72))) %}
+          off
         {% elif people_home|length == 0 or states(hvac_mode_select) == 'Away' %}
           inactive
         {% elif sleeping_sensors | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' %}
@@ -216,14 +248,6 @@ actions:
           active
         {% else %}
           inactive
-        {% endif %}
-      this_hvac_mode: >-
-        {% if current_temp > states(hot_weather_temp_entity)|float(72) %}
-          cool
-        {% elif current_temp < states(cold_weather_temp_entity)|float(72) %}
-          heat
-        {% else %}
-          mid
         {% endif %}
 
   - if:
