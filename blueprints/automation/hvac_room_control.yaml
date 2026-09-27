@@ -182,7 +182,7 @@ actions:
     then:
       - delay:
           seconds: >-
-            {{ (60 - as_timestamp(now()) - as_timestamp(this.attributes.last_triggered)) | max(0) | round(0) }}
+            {{ (60 - as_timestamp(now()) + as_timestamp(this.attributes.last_triggered))|round(0) }}
   - variables:
       is_guest_supported: !input enable_guest
       temp_sensor: !input temp_sensor
