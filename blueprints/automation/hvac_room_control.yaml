@@ -148,27 +148,27 @@ max: 10
 triggers:
   - trigger: state
     entity_id: !input temp_sensor
+    to: null
     for:
       seconds: 60
   - trigger: state
     entity_id: !input hvac_mode_select
+    to: null
     for:
       seconds: 60
   - trigger: state
     entity_id: !input home_persons
-    from: "home"
+    to: null
     for:
       seconds: 60
   - trigger: state
-    entity_id: !input home_persons
-    to: "home"
-    for:
-      seconds: 60
-  - trigger: state
+    to: null
     entity_id: !input active_entities
   - trigger: state
+    to: null
     entity_id: !input required_entities
   - trigger: state
+    to: null
     entity_id: !input sleeping_sensors
   - triggers: !input other_trigger
 
