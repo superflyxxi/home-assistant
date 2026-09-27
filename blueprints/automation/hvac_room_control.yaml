@@ -27,6 +27,12 @@ blueprint:
             - "Auto"
             - "Turn Off"
             - "Quiet Fan"
+    enable_temp_action_sleep:
+      name: Enable Target Temperature Action on Sleep
+      description: When enabled, the target climate will not change when sleeping.
+      default: false
+      selector:
+        boolean: {}
     home_persons:
       name: Home Persons
       description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
@@ -221,7 +227,10 @@ actions:
       hvac_sleep_heat_temp: !input default_heat_sleep_temp
       hvac_sleep_cool_temp: !input default_cool_sleep_temp
       target_temp_action: !input target_temp_action
+      enable_temp_action_sleep: !input enable_temp_action_sleep
+      sleeping_sensors: !input sleeping_sensors
 
+      is_sleeping: "{{ sleeping_sensors | default([], true) | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' }}"
       target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
       outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
       people_home: >
@@ -250,11 +259,11 @@ actions:
           off
         {% elif (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
-        {% elif target_temp_action == 'Turn Off' and states(target_climate) in ['off', this_hvac_mode]  and ((this_hvac_mode == 'heat' and target_climate_current_temp > state_attr(target_climate, 'temperature')|float(default_unknown_temp)) or (this_hvac_mode == 'cool' and target_climate_current_temp < state_attr(target_climate, 'temperature')|float(default_unknown_temp))) %}
+        {% elif target_temp_action == 'Turn Off' and states(target_climate) in ['off', this_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((this_hvac_mode == 'heat' and target_climate_current_temp > state_attr(target_climate, 'temperature')|float(default_unknown_temp)) or (this_hvac_mode == 'cool' and target_climate_current_temp < state_attr(target_climate, 'temperature')|float(default_unknown_temp))) %}
           off
         {% elif people_home|length == 0 or states(hvac_mode_select) == 'Away' %}
           inactive
-        {% elif sleeping_sensors | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' %}
+        {% elif is_sleeping %}
           sleep
         {% elif (required_entities|map('states')|max=='on' and active_entities|map('states')|max == 'on') or states(hvac_mode_select) == 'Home' %}
           active
