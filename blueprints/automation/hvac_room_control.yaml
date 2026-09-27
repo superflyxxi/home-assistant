@@ -17,12 +17,16 @@ blueprint:
       default: false
       selector:
         boolean: {}
-    enable_turn_off_target_temp:
-      name: Enable Turning Off Climate on Target Temperature
-      description: When the target temperature is reached, turn off the climate instead of let it run. This is useful for rooms where the blowing of air can feel uncomfortable.
-      default: false
+    target_temp_action:
+      name: Action On Reaching Target Temperature
+      description: When the target temperature is reached, determine what action to take. Auto, let it run as is. Turn Off, turn off the climate; this is useful for rooms where the blowing of air can feel uncomfortable. Quiet Fan, change the fan mode to quiet.
+      default: "Auto"
       selector:
-        boolean: {}
+        select:
+          options:
+            - "Auto"
+            - "Turn Off"
+            - "Quiet Fan"
     home_persons:
       name: Home Persons
       description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
@@ -200,6 +204,7 @@ actions:
           seconds: >-
             {{ (60 - as_timestamp(now()) + as_timestamp(this.attributes.last_triggered))|round(0) }}
   - variables:
+      default_unknown_temp: 72
       is_guest_supported: !input enable_guest
       outdoor_temp_sensor: !input outdoor_temp_sensor
       hvac_mode_select: !input hvac_mode_select
@@ -215,16 +220,16 @@ actions:
       hvac_inactive_cool_temp: !input default_cool_inactive_temp
       hvac_sleep_heat_temp: !input default_heat_sleep_temp
       hvac_sleep_cool_temp: !input default_cool_sleep_temp
-      is_turnoff_on_temp_supported: !input enable_turn_off_target_temp
+      target_temp_action: !input target_temp_action
 
-      target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(72) }}"
-      outdoor_temp: "{{ states(outdoor_temp_sensor)|float }}"
+      target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
+      outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
       people_home: >
         {{ home_persons | select('is_state', 'home') | list }}
       this_hvac_mode: >-
-        {% if outdoor_temp > states(hot_weather_temp_entity)|float(72) %}
+        {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
           cool
-        {% elif outdoor_temp < states(cold_weather_temp_entity)|float(72) %}
+        {% elif outdoor_temp < states(cold_weather_temp_entity)|float(default_unknown_temp) %}
           heat
         {% else %}
           mid
@@ -245,7 +250,7 @@ actions:
           off
         {% elif (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
-        {% elif is_turnoff_on_temp_supported and this_hvac_mode == states(target_climate) and ((this_hvac_mode == 'heat' and target_climate_current_temp > state_attr(target_climate, 'temperature')|float(72)) or (this_hvac_mode == 'cool' and target_climate_current_temp < state_attr(target_climate, 'temperature')|float(72))) %}
+        {% elif target_temp_action == 'Turn Off' and states(target_climate) in ['off', this_hvac_mode]  and ((this_hvac_mode == 'heat' and target_climate_current_temp > state_attr(target_climate, 'temperature')|float(default_unknown_temp)) or (this_hvac_mode == 'cool' and target_climate_current_temp < state_attr(target_climate, 'temperature')|float(default_unknown_temp))) %}
           off
         {% elif people_home|length == 0 or states(hvac_mode_select) == 'Away' %}
           inactive
