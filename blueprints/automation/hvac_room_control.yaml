@@ -172,6 +172,7 @@ triggers:
   # Outdoor temperature sensor changes for 60s
   - trigger: state
     entity_id: !input outdoor_temp_sensor
+    id: outdoor_temp_changed
     to: null
     for:
       seconds: 60
@@ -230,9 +231,14 @@ actions:
       target_temp_action: !input target_temp_action
       enable_temp_action_sleep: !input enable_temp_action_sleep
       sleeping_sensors: !input sleeping_sensors
+  - alias: "Static Variables"
+    variables:
+      target_temp_action_triggers: 
+        - current_temp_changed
+        - outdoor_temp_changed
+      default_unknown_temp: 72
   - alias: "Dynamic Variables"
     variables:
-      default_unknown_temp: 72
       target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
       target_climate_current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
       target_climate_current_state: "{{ states(target_climate) }}"
@@ -253,7 +259,8 @@ actions:
         {{ on_sleep_entities | map('labels') | sum(start=[]) | map('lower') | list }}
       sleep_people: >-
         {{ sleep_entity_labels | select('in', people_home) | list }}
-      is_sleeping: "{{ sleep_people|length >0 or states(hvac_mode_select) == 'Sleep' }}"
+      is_sleeping: >-
+        {{ sleep_people|length >0 or states(hvac_mode_select) == 'Sleep' }}
       desired_hvac_mode: >-
         {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
           cool
@@ -264,21 +271,20 @@ actions:
         {% endif %}
       # mode is based on the following
       # 1. If select input is off; then off
-      # 2. if guest or manual; then noop or no changes
+      # 2. if guest or manual or target_temp_action Auto and triggered by temp actions; then noop or no changes
       # 3. if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
       #   if heating and current > target; then off
       #   if cooling and current < target; then off
       #   otherwise, continue
-      # 4. no one home or hvac mode is away; then inactive
       # 5. if at least one sleeping sensor on or hvac mode is sleep; sleep
       # 6. if at least one required sensor is on and at least one active sensor is on; then active
       # otherwise inactive
       desired_state: >-
         {% if is_state(hvac_mode_select,'Off') %}
           off
-        {% elif (target_temp_action == 'Auto' and trigger.id == 'current_temp_changed') or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+        {% elif (target_temp_action == 'Auto' and trigger.id in target_temp_action_triggers) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
-        {% elif trigger.id == 'current_temp_changed' and target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
+        {% elif trigger.id in target_temp_action_triggers and target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
           off
         {% elif is_sleeping %}
           sleep
