@@ -166,6 +166,7 @@ triggers:
   - trigger: state
     entity_id: !input target_climate
     attribute: current_temperature
+    id: current_temp_changed
     for:
       seconds: 60
   # Outdoor temperature sensor changes for 60s
@@ -232,10 +233,12 @@ actions:
 
       is_sleeping: "{{ sleeping_sensors | default([], true) | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' }}"
       target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
+      target_climate_current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
+      target_climate_current_state: "{{ states(target_climate) }}"
       outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
       people_home: >
         {{ home_persons | select('is_state', 'home') | list }}
-      this_hvac_mode: >-
+      desired_hvac_mode: >-
         {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
           cool
         {% elif outdoor_temp < states(cold_weather_temp_entity)|float(default_unknown_temp) %}
@@ -254,12 +257,12 @@ actions:
       # 5. if at least one sleeping sensor on or hvac mode is sleep; sleep
       # 6. if at least one required sensor is on and at least one active sensor is on; then active
       # otherwise inactive
-      this_mode: >-
+      desired_state: >-
         {% if states(hvac_mode_select) == 'Off' %}
           off
-        {% elif (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+        {% elif (target_temp_action == 'Auto' and trigger.id == 'current_temp_changed') or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
-        {% elif target_temp_action == 'Turn Off' and states(target_climate) in ['off', this_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((this_hvac_mode == 'heat' and target_climate_current_temp > state_attr(target_climate, 'temperature')|float(default_unknown_temp)) or (this_hvac_mode == 'cool' and target_climate_current_temp < state_attr(target_climate, 'temperature')|float(default_unknown_temp))) %}
+        {% elif trigger.id == 'current_temp_changed' and target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
           off
         {% elif people_home|length == 0 or states(hvac_mode_select) == 'Away' %}
           inactive
@@ -274,14 +277,14 @@ actions:
   - if:
       - condition: template
         value_template: >-
-          {{ target_climate is defined and target_climate != '' and this_mode != 'noop' }}
+          {{ target_climate is defined and target_climate != '' and desired_state != 'noop' }}
     then:
       - choose:
           # --- OFF MODE ---
           - alias: "Off"
             conditions:
               - condition: template
-                value_template: "{{ this_mode == 'off' }}"
+                value_template: "{{ desired_state == 'off' }}"
             sequence:
               - action: climate.set_hvac_mode
                 alias: Turn off
@@ -294,14 +297,14 @@ actions:
           - alias: Sleep
             conditions:
               - condition: template
-                value_template: "{{ this_mode == 'sleep' }}"
+                value_template: "{{ desired_state == 'sleep' }}"
                 alias: Anyone sleeping
             sequence:
               - choose:
                   # Cooling
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'cool' }}"
+                        value_template: "{{ desired_hvac_mode == 'cool' }}"
                     sequence:
                       - action: climate.set_temperature
                         alias: Cool to desired sleep
@@ -313,7 +316,7 @@ actions:
                   # Mid
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'mid' }}"
+                        value_template: "{{ desired_hvac_mode == 'mid' }}"
                     sequence:
                       - action: climate.set_hvac_mode
                         alias: Sleeping fan
@@ -324,7 +327,7 @@ actions:
                         enabled: true
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'heat' }}"
+                        value_template: "{{ desired_hvac_mode == 'heat' }}"
                     sequence:
                       - action: climate.set_temperature
                         alias: Heat to desired sleep
@@ -345,14 +348,14 @@ actions:
           - alias: Inactive
             conditions:
               - condition: template
-                value_template: "{{ this_mode == 'inactive' }}"
+                value_template: "{{ desired_state == 'inactive' }}"
                 alias: Inactive
             sequence:
               - choose:
                   # Cool
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'cool' }}"
+                        value_template: "{{ desired_hvac_mode == 'cool' }}"
                     sequence:
                       - action: climate.set_temperature
                         alias: Cool to desired inactive
@@ -364,7 +367,7 @@ actions:
                   # Mid
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'mid' }}"
+                        value_template: "{{ desired_hvac_mode == 'mid' }}"
                     sequence:
                       - action: climate.set_hvac_mode
                         alias: Inactive off
@@ -375,7 +378,7 @@ actions:
                         enabled: true
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'heat' }}"
+                        value_template: "{{ desired_hvac_mode == 'heat' }}"
                     sequence:
                       - action: climate.set_temperature
                         alias: Heat to desired inactive
@@ -396,13 +399,13 @@ actions:
           - alias: Active
             conditions:
               - condition: template
-                value_template: "{{ this_mode == 'active' }}"
+                value_template: "{{ desired_state == 'active' }}"
                 alias: Active
             sequence:
               - choose:
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'cool' }}"
+                        value_template: "{{ desired_hvac_mode == 'cool' }}"
                     sequence:
                       - action: climate.set_temperature
                         alias: Cool to preferred active
@@ -413,7 +416,7 @@ actions:
                           hvac_mode: cool
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'mid' }}"
+                        value_template: "{{ desired_hvac_mode == 'mid' }}"
                     sequence:
                       - action: climate.set_hvac_mode
                         alias: Mid
@@ -424,7 +427,7 @@ actions:
                         enabled: true
                   - conditions:
                       - condition: template
-                        value_template: "{{ this_hvac_mode == 'heat' }}"
+                        value_template: "{{ desired_hvac_mode == 'heat' }}"
                     sequence:
                       - action: climate.set_temperature
                         alias: Heat to preferred active
