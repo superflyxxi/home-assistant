@@ -210,8 +210,8 @@ actions:
       - delay:
           seconds: >-
             {{ (60 - as_timestamp(now()) + as_timestamp(this.attributes.last_triggered))|round(0) }}
-  - variables:
-      default_unknown_temp: 72
+  - alias: "Inputs"
+    variables:
       is_guest_supported: !input enable_guest
       outdoor_temp_sensor: !input outdoor_temp_sensor
       hvac_mode_select: !input hvac_mode_select
@@ -230,14 +230,30 @@ actions:
       target_temp_action: !input target_temp_action
       enable_temp_action_sleep: !input enable_temp_action_sleep
       sleeping_sensors: !input sleeping_sensors
-
-      is_sleeping: "{{ sleeping_sensors | default([], true) | map('states') | max == 'on' or states(hvac_mode_select) == 'Sleep' }}"
+  - alias: "Dynamic Variables"
+    variables:
+      default_unknown_temp: 72
       target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
       target_climate_current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
       target_climate_current_state: "{{ states(target_climate) }}"
       outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
       people_home: >
-        {{ home_persons | select('is_state', 'home') | list }}
+        {{ home_persons | select('is_state', 'home') | map('state_attr', 'friendly_name') | map('lower') | list }}
+      on_required_entities: >-
+        {{ required_entities | select('is_state', 'on') | list }}
+      on_active_entities: >-
+        {{ active_entities | select('is_state', 'on') | list }}
+      active_entity_labels: >-
+        {{ on_active_entities | map('labels') | sum(start=[]) | map('lower') | list }}
+      active_people: >-
+        {{ active_entity_labels | select('in', people_home) | list }}
+      on_sleep_entities: >-
+        {{ sleep_sensors | select('is_state', 'on') | list }}
+      sleep_entity_labels: >-
+        {{ on_sleep_entities | map('labels') | sum(start=[]) | map('lower') | list }}
+      sleep_people: >-
+        {{ sleep_entity_labels | select('in', people_home) | list }}
+      is_sleeping: "{{ sleep_people|length >0 or states(hvac_mode_select) == 'Sleep' }}"
       desired_hvac_mode: >-
         {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
           cool
@@ -249,7 +265,7 @@ actions:
       # mode is based on the following
       # 1. If select input is off; then off
       # 2. if guest or manual; then noop or no changes
-      # 3. if turn off when target temp is reached and new mode is matching existing mode
+      # 3. if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
       #   if heating and current > target; then off
       #   if cooling and current < target; then off
       #   otherwise, continue
@@ -258,17 +274,15 @@ actions:
       # 6. if at least one required sensor is on and at least one active sensor is on; then active
       # otherwise inactive
       desired_state: >-
-        {% if states(hvac_mode_select) == 'Off' %}
+        {% if is_state(hvac_mode_select,'Off') %}
           off
         {% elif (target_temp_action == 'Auto' and trigger.id == 'current_temp_changed') or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
         {% elif trigger.id == 'current_temp_changed' and target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
           off
-        {% elif people_home|length == 0 or states(hvac_mode_select) == 'Away' %}
-          inactive
         {% elif is_sleeping %}
           sleep
-        {% elif (required_entities|map('states')|max=='on' and active_entities|map('states')|max == 'on') or states(hvac_mode_select) == 'Home' %}
+        {% elif (on_required_entities|length>0 and active_people|length>0) or states(hvac_mode_select) == 'Home' %}
           active
         {% else %}
           inactive
