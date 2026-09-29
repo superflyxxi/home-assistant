@@ -239,9 +239,6 @@ actions:
       sleeping_sensors: !input sleeping_sensors
   - alias: "Static Variables"
     variables:
-      target_temp_action_triggers: 
-        - current_temp_changed
-        - outdoor_temp_changed
       default_unknown_temp: 72
   - alias: "Dynamic Variables"
     variables:
@@ -277,7 +274,7 @@ actions:
         {% endif %}
       # mode is based on the following
       # 1. If select input is off; then off
-      # 2. if guest or manual or target_temp_action Auto and triggered by temp actions; then noop or no changes
+      # 2. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
       # 3. if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
       #   if heating and current > target; then off
       #   if cooling and current < target; then off
@@ -288,9 +285,9 @@ actions:
       desired_state: >-
         {% if is_state(hvac_mode_select,'Off') %}
           off
-        {% elif (target_temp_action == 'Auto' and trigger.id in target_temp_action_triggers) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+        {% elif (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == target_climate_current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
-        {% elif trigger.id in target_temp_action_triggers and target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
+        {% elif target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
           off
         {% elif is_sleeping %}
           sleep
