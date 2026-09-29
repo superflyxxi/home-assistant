@@ -200,6 +200,12 @@ triggers:
     entity_id: !input sleeping_sensors
   - triggers: !input other_trigger
 
+condition:
+  # Only run if triggered by not current_temp_changed or if target_temp_action is enabled
+  # if current_temp_changed but Auto, then automatino does nto run
+  - condition: template
+    value_template: "{{ trigger.id != 'current_temp_changed' or target_temp_action != 'Auto' }}"
+
 actions:
   - alias: "Throttle: Wait if last triggered less than 60 seconds ago"
     if:
