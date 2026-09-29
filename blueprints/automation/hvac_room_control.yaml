@@ -256,6 +256,8 @@ actions:
         {{ on_active_entities | map('labels') | sum(start=[]) | map('lower') | list }}
       active_people: >-
         {{ active_entity_labels | select('in', people_home) | list }}
+      is_active: >-
+        {{ (on_required_entities|length>0 and active_people|length>0) or states(hvac_mode_select) == 'Home' }}
       on_sleep_entities: >-
         {{ sleeping_sensors | select('is_state', 'on') | list }}
       sleep_entity_labels: >-
@@ -291,7 +293,7 @@ actions:
           off
         {% elif is_sleeping %}
           sleep
-        {% elif (on_required_entities|length>0 and active_people|length>0) or states(hvac_mode_select) == 'Home' %}
+        {% elif is_active %}
           active
         {% else %}
           inactive
