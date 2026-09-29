@@ -254,7 +254,7 @@ actions:
       active_people: >-
         {{ active_entity_labels | select('in', people_home) | list }}
       on_sleep_entities: >-
-        {{ sleep_sensors | select('is_state', 'on') | list }}
+        {{ sleeping_sensors | select('is_state', 'on') | list }}
       sleep_entity_labels: >-
         {{ on_sleep_entities | map('labels') | sum(start=[]) | map('lower') | list }}
       sleep_people: >-
