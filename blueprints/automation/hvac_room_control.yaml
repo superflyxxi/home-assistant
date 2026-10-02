@@ -26,7 +26,7 @@ blueprint:
           options:
             - "Auto"
             - "Turn Off"
-            - "Quiet Fan"
+            #- "Quiet Fan"
     enable_temp_action_sleep:
       name: Enable Target Temperature Action on Sleep
       description: When enabled, the target climate will not change when sleeping.
@@ -274,6 +274,7 @@ actions:
         {% else %}
           mid
         {% endif %}
+      desired_fan_speed: noop
       # mode is based on the following
       # 1. If select input is off; then off
       # 2. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
@@ -362,12 +363,17 @@ actions:
                           temperature: "{{ hvac_sleep_heat_temp }}"
                           hvac_mode: heat
                 enabled: true
-              - action: climate.set_fan_mode
-                alias: Set fain mode to auto
-                target:
-                  entity_id: "{{ target_climate }}"
-                data:
-                  fan_mode: auto
+              - if:
+                - condition: template
+                  value_template: >-
+                    {{ desired_fan_mode != 'noop' }}
+                then:
+                  - action: climate.set_fan_mode
+                    alias: Setting fan mode
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      fan_mode: "{{ desired_fan_mode }}"
 
           # --- INACTIVE MODE ---
           - alias: Inactive
@@ -413,12 +419,17 @@ actions:
                           temperature: "{{ hvac_inactive_heat_temp }}"
                           hvac_mode: heat
                 enabled: true
-              - action: climate.set_fan_mode
-                target:
-                  entity_id: "{{ target_climate }}"
-                data:
-                  fan_mode: auto
-                enabled: true
+              - if:
+                - condition: template
+                  value_template: >-
+                    {{ desired_fan_mode != 'noop' }}
+                then:
+                  - action: climate.set_fan_mode
+                    alias: Setting fan mode
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      fan_mode: "{{ desired_fan_mode }}"
 
           # --- ACTIVE MODE ---
           - alias: Active
@@ -462,10 +473,14 @@ actions:
                           temperature: "{{ hvac_active_heat_temp }}"
                           hvac_mode: heat
                 enabled: true
-              - action: climate.set_fan_mode
-                target:
-                  entity_id: "{{ target_climate }}"
-                data:
-                  fan_mode: auto
-                enabled: true
-        enabled: true
+              - if:
+                - condition: template
+                  value_template: >-
+                    {{ desired_fan_mode != 'noop' }}
+                then:
+                  - action: climate.set_fan_mode
+                    alias: Setting fan mode
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      fan_mode: "{{ desired_fan_mode }}"
