@@ -293,6 +293,26 @@ actions:
         {% else %}
           inactive
         {% endif %}
+      desired_target_temp: >-
+        {% if desired_hvac_mode == 'heat' %}
+          {% if initial_desired_state == 'sleep' %}
+            {{ hvac_sleep_heat_temp }}
+          {% elif initial_desired_state == 'active' %}
+            {{ hvac_active_heat_temp }}
+          {% else %}
+            {{ hvac_inactive_heat_temp }}
+          {% endif %}
+        {% elif desired_hvac_mode == 'cool' %}
+          {% if initial_desired_state == 'sleep' %}
+            {{ hvac_sleep_cool_temp }}
+          {% elif initial_desired_state == 'active' %}
+            {{ hvac_active_cool_temp }}
+          {% else %}
+            {{ hvac_inactive_cool_temp }}
+          {% endif %}
+        {% else %}
+          {{ default_unknown_temp }}
+        {% endif %} 
       # override based on other modes
       # if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
       #   if heating and current > target; then off
@@ -305,7 +325,6 @@ actions:
           none
         {% endif %}
       desired_state: "{{ initial_desired_state if override_desired_state == 'none' else override_desired_state }}"
-
 
   - if:
       - condition: template
@@ -344,8 +363,8 @@ actions:
                         target:
                           entity_id: "{{ target_climate }}"
                         data:
-                          temperature: "{{ hvac_sleep_cool_temp }}"
-                          hvac_mode: cool
+                          temperature: "{{ desired_target_temp }}"
+                          hvac_mode: "{{ desired_state }}"
                   # Mid
                   - conditions:
                       - condition: template
@@ -367,8 +386,8 @@ actions:
                         target:
                           entity_id: "{{ target_climate }}"
                         data:
-                          temperature: "{{ hvac_sleep_heat_temp }}"
-                          hvac_mode: heat
+                          temperature: "{{ desired_target_temp }}"
+                          hvac_mode: "{{ desired_state }}"
                 enabled: true
               - if:
                 - condition: template
@@ -400,8 +419,8 @@ actions:
                         target:
                           entity_id: "{{ target_climate }}"
                         data:
-                          temperature: "{{ hvac_inactive_cool_temp }}"
-                          hvac_mode: cool
+                          temperature: "{{ desired_target_temp }}"
+                          hvac_mode: "{{ desired_state }}"
                   # Mid
                   - conditions:
                       - condition: template
@@ -423,8 +442,8 @@ actions:
                         target:
                           entity_id: "{{ target_climate }}"
                         data:
-                          temperature: "{{ hvac_inactive_heat_temp }}"
-                          hvac_mode: heat
+                          temperature: "{{ desired_target_temp }}"
+                          hvac_mode: "{{ desired_state }}"
                 enabled: true
               - if:
                 - condition: template
@@ -455,8 +474,8 @@ actions:
                         target:
                           entity_id: "{{ target_climate }}"
                         data:
-                          temperature: "{{ hvac_active_cool_temp }}"
-                          hvac_mode: cool
+                          temperature: "{{ desired_target_temp }}"
+                          hvac_mode: "{{ desired_state }}"
                   - conditions:
                       - condition: template
                         value_template: "{{ desired_hvac_mode == 'mid' }}"
@@ -477,8 +496,8 @@ actions:
                         target:
                           entity_id: "{{ target_climate }}"
                         data:
-                          temperature: "{{ hvac_active_heat_temp }}"
-                          hvac_mode: heat
+                          temperature: "{{ desired_target_temp }}"
+                          hvac_mode: "{{ desired_state }}"
                 enabled: true
               - if:
                 - condition: template
