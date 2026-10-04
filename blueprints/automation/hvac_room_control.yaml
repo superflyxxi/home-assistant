@@ -276,21 +276,15 @@ actions:
         {% endif %}
       desired_fan_speed: noop
       # mode is based on the following
-      # 1. If select input is off; then off
-      # 2. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
-      # 3. if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
-      #   if heating and current > target; then off
-      #   if cooling and current < target; then off
-      #   otherwise, continue
-      # 5. if at least one sleeping sensor on or hvac mode is sleep; sleep
-      # 6. if at least one required sensor is on and at least one active sensor is on; then active
+      # 1. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
+      # 2. If select input is off; then off
+      # 3. if at least one sleeping sensor on or hvac mode is sleep; sleep
+      # 4. if at least one required sensor is on and at least one active sensor is on; then active
       # otherwise inactive
-      desired_state: >-
-        {% if is_state(hvac_mode_select,'Off') %}
-          off
-        {% elif (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == target_climate_current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+      initial_desired_state: >-
+        {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == target_climate_current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
-        {% elif target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
+        {% elif is_state(hvac_mode_select,'Off') %}
           off
         {% elif is_sleeping %}
           sleep
@@ -299,6 +293,19 @@ actions:
         {% else %}
           inactive
         {% endif %}
+      # override based on other modes
+      # if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
+      #   if heating and current > target; then off
+      #   if cooling and current < target; then off
+      #   otherwise, continue
+      override_desired_state: >-
+        {% if target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
+          off
+        {% else %}
+          none
+        {% endif %}
+      desired_state: "{{ initial_desired_state if override_desired_state == 'none' else override_desired_state }}"
+
 
   - if:
       - condition: template
