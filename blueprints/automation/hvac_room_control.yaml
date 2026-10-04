@@ -242,9 +242,9 @@ actions:
       default_unknown_temp: 72
   - alias: "Dynamic Variables"
     variables:
-      target_climate_current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
-      target_climate_current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
-      target_climate_current_state: "{{ states(target_climate) }}"
+      current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
+      current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
+      current_state: "{{ states(target_climate) }}"
       outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
       people_home: >
         {{ home_persons | select('is_state', 'home') | map('state_attr', 'friendly_name') | map('lower') | list }}
@@ -282,7 +282,7 @@ actions:
       # 4. if at least one required sensor is on and at least one active sensor is on; then active
       # otherwise inactive
       initial_desired_state: >-
-        {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == target_climate_current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+        {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
           noop
         {% elif is_state(hvac_mode_select,'Off') %}
           off
@@ -319,7 +319,7 @@ actions:
       #   if cooling and current < target; then off
       #   otherwise, continue
       override_desired_state: >-
-        {% if target_temp_action == 'Turn Off' and target_climate_current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and target_climate_current_temp > target_climate_current_target_temp) or (desired_hvac_mode == 'cool' and target_climate_current_temp < target_climate_current_target_temp)) %}
+        {% if target_temp_action == 'Turn Off' and current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and current_temp > current_target_temp) or (desired_hvac_mode == 'cool' and current_temp < current_target_temp)) %}
           off
         {% else %}
           none
