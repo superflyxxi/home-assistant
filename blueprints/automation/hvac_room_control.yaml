@@ -274,7 +274,7 @@ actions:
         {% else %}
           mid
         {% endif %}
-      desired_fan_speed: noop
+      desired_fan_mode: noop
       # mode is based on the following
       # 1. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
       # 2. If select input is off; then off
