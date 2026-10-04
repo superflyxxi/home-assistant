@@ -315,11 +315,19 @@ actions:
         {% endif %} 
       # override based on other modes
       # if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
+      # and current_target_temp is equals desired_target_temp
       #   if heating and current > target; then off
       #   if cooling and current < target; then off
       #   otherwise, continue
       override_desired_state: >-
-        {% if target_temp_action == 'Turn Off' and current_state in ['off', desired_hvac_mode] and (enable_temp_action_sleep or not is_sleeping) and ((desired_hvac_mode == 'heat' and current_temp > current_target_temp) or (desired_hvac_mode == 'cool' and current_temp < current_target_temp)) %}
+        {% if target_temp_action == 'Turn Off'
+          and current_state in ['off', desired_hvac_mode]
+          and (enable_temp_action_sleep or not is_sleeping)
+          and desired_target_temp == current_target_temp
+          and (
+            (desired_hvac_mode == 'heat' and current_temp > current_target_temp) 
+              or (desired_hvac_mode == 'cool' and current_temp < current_target_temp)
+          ) %}
           off
         {% else %}
           none
@@ -364,7 +372,7 @@ actions:
                           entity_id: "{{ target_climate }}"
                         data:
                           temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_state }}"
+                          hvac_mode: "{{ desired_hvac_mode }}"
                   # Mid
                   - conditions:
                       - condition: template
@@ -387,7 +395,7 @@ actions:
                           entity_id: "{{ target_climate }}"
                         data:
                           temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_state }}"
+                          hvac_mode: "{{ desired_hvac_mode }}"
                 enabled: true
               - if:
                 - condition: template
@@ -420,7 +428,7 @@ actions:
                           entity_id: "{{ target_climate }}"
                         data:
                           temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_state }}"
+                          hvac_mode: "{{ desired_hvac_mode }}"
                   # Mid
                   - conditions:
                       - condition: template
@@ -443,7 +451,7 @@ actions:
                           entity_id: "{{ target_climate }}"
                         data:
                           temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_state }}"
+                          hvac_mode: "{{ desired_hvac_mode }}"
                 enabled: true
               - if:
                 - condition: template
@@ -475,7 +483,7 @@ actions:
                           entity_id: "{{ target_climate }}"
                         data:
                           temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_state }}"
+                          hvac_mode: "{{ desired_hvac_mode }}"
                   - conditions:
                       - condition: template
                         value_template: "{{ desired_hvac_mode == 'mid' }}"
@@ -497,7 +505,7 @@ actions:
                           entity_id: "{{ target_climate }}"
                         data:
                           temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_state }}"
+                          hvac_mode: "{{ desired_hvac_mode }}"
                 enabled: true
               - if:
                 - condition: template
