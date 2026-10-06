@@ -35,7 +35,7 @@ blueprint:
         number:
           min: 0
           max: 2
-          step: 0.1
+          step: 0.5
           mode: slider              # Options: "slider" or "box"
     enable_temp_action_sleep:
       name: Enable Target Temperature Action on Sleep
