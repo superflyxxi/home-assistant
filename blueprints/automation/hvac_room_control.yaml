@@ -27,6 +27,16 @@ blueprint:
             - "Auto"
             - "Turn Off"
             #- "Quiet Fan"
+    target_temp_action_buffer:
+      name: Target Temperation Action Buffer
+      description: The degrees buffer in which to perform the target action.
+      default: 0.0
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 0.1
+          mode: slider              # Options: "slider" or "box"
     enable_temp_action_sleep:
       name: Enable Target Temperature Action on Sleep
       description: When enabled, the target climate will not change when sleeping.
@@ -235,6 +245,7 @@ actions:
       hvac_sleep_heat_temp: !input default_heat_sleep_temp
       hvac_sleep_cool_temp: !input default_cool_sleep_temp
       target_temp_action: !input target_temp_action
+      target_temp_action_buffer: !input target_temp_action_buffer
       enable_temp_action_sleep: !input enable_temp_action_sleep
       sleeping_sensors: !input sleeping_sensors
   - alias: "Static Variables"
@@ -325,8 +336,8 @@ actions:
           and (enable_temp_action_sleep or not is_sleeping)
           and desired_target_temp == current_target_temp
           and (
-            (desired_hvac_mode == 'heat' and current_temp > current_target_temp) 
-              or (desired_hvac_mode == 'cool' and current_temp < current_target_temp)
+            (desired_hvac_mode == 'heat' and current_temp > (current_target_temp + target_temp_action_buffer))
+              or (desired_hvac_mode == 'cool' and current_temp < (current_target_temp - target_temp_action_buffer))
           ) %}
           off
         {% else %}
