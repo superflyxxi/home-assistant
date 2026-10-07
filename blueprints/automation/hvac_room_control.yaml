@@ -168,6 +168,19 @@ blueprint:
           step: 1
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
+    duration_between_executions:
+      name: Duration Between Executions
+      description: >-
+        The amount of time between automation executions. This ensures when changes happen quickly, the system
+        doesn't get overwhelmed with actions. Note: the queue depth is 10.
+      default:
+        hours: 0
+        minutes: 1
+      selector:
+        duration:
+          enable_day: false
+          enable_second: false
+          enable_millisecond: false
 mode: queued
 max: 10
 
@@ -217,16 +230,6 @@ condition:
     value_template: "{{ trigger.id != 'current_temp_changed' or target_temp_action != 'Auto' }}"
 
 actions:
-  - alias: "Throttle: Wait if last triggered less than 60 seconds ago"
-    if:
-      - condition: template
-        value_template: >-
-          {{ this.attributes.last_triggered is not none and 
-             (as_timestamp(now()) - as_timestamp(this.attributes.last_triggered)) < 60 }}
-    then:
-      - delay:
-          seconds: >-
-            {{ (60 - as_timestamp(now()) + as_timestamp(this.attributes.last_triggered))|round(0) }}
   - alias: "Inputs"
     variables:
       is_guest_supported: !input enable_guest
@@ -248,9 +251,23 @@ actions:
       target_temp_action_buffer: !input target_temp_action_buffer
       enable_temp_action_sleep: !input enable_temp_action_sleep
       sleeping_sensors: !input sleeping_sensors
-  - alias: "Static Variables"
-    variables:
+      duration_between_executions: !input duration_between_executions
       default_unknown_temp: 72
+  - alias: "Determine throttle variable"
+    variables:
+      duration_seconds: >-
+        {{ as_timedelta(duration_between_executions).total_seconds() }}
+      seconds_since_last_run: >-
+        {{ as_timestamp(now()) - as_timestamp(this.attributes.last_triggered) }}
+  - alias: "Throttle: Wait if triggered recently"
+    if:
+      - condition: template
+        value_template: >-
+          {{ this.attributes.last_triggered is not none and seconds_since_last_run < duration_seconds }}
+    then:
+      - delay:
+          seconds: >-
+            {{ (duration_seconds - seconds_since_last_run)|round(0) }}
   - alias: "Dynamic Variables"
     variables:
       current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
