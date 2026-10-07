@@ -342,9 +342,15 @@ triggers:
 
 condition:
   # Only run if triggered by not current_temp_changed or if target_temp_action is enabled
-  # if current_temp_changed but Auto, then automatino does nto run
-  - condition: template
+  # if current_temp_changed but Auto, then automation does not run
+  - alias: "Not (Triggered by Current Temp and Target Temp Action Auto)"
+    condition: template
     value_template: "{{ trigger.id != 'current_temp_changed' or target_temp_action != 'Auto' }}"
+  # if not noop
+  - alias: "Desired State not noop"
+    condition: template
+    value_template: >-
+      {{ target_climate is defined and target_climate != '' and desired_state != 'noop' }}
 
 actions:
   - alias: "Throttle: Wait if triggered recently"
@@ -356,187 +362,182 @@ actions:
       - delay:
           seconds: >-
             {{ (duration_seconds - seconds_since_last_run)|round(0) }}
-  - if:
-      - condition: template
-        value_template: >-
-          {{ target_climate is defined and target_climate != '' and desired_state != 'noop' }}
-    then:
-      - choose:
-          # --- OFF MODE ---
-          - alias: "Off"
-            conditions:
-              - condition: template
-                value_template: "{{ desired_state == 'off' }}"
-            sequence:
-              - action: climate.set_hvac_mode
-                alias: Turn off
+  - choose:
+      # --- OFF MODE ---
+      - alias: "Off"
+        conditions:
+          - condition: template
+            value_template: "{{ desired_state == 'off' }}"
+        sequence:
+          - action: climate.set_hvac_mode
+            alias: Turn off
+            target:
+              entity_id: "{{ target_climate }}"
+            data:
+              hvac_mode: "off"
+
+      # --- SLEEP MODE ---
+      - alias: Sleep
+        conditions:
+          - condition: template
+            value_template: "{{ desired_state == 'sleep' }}"
+            alias: Anyone sleeping
+        sequence:
+          - choose:
+              # Cooling
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'cool' }}"
+                sequence:
+                  - action: climate.set_temperature
+                    alias: Cool to desired sleep
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      temperature: "{{ desired_target_temp }}"
+                      hvac_mode: "{{ desired_hvac_mode }}"
+              # Mid
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'mid' }}"
+                sequence:
+                  - action: climate.set_hvac_mode
+                    alias: Sleeping fan
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      hvac_mode: fan_only
+                    enabled: true
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'heat' }}"
+                sequence:
+                  - action: climate.set_temperature
+                    alias: Heat to desired sleep
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      temperature: "{{ desired_target_temp }}"
+                      hvac_mode: "{{ desired_hvac_mode }}"
+            enabled: true
+          - if:
+            - condition: template
+              value_template: >-
+                {{ desired_fan_mode != 'noop' }}
+            then:
+              - action: climate.set_fan_mode
+                alias: Setting fan mode
                 target:
                   entity_id: "{{ target_climate }}"
                 data:
-                  hvac_mode: "off"
+                  fan_mode: "{{ desired_fan_mode }}"
 
-          # --- SLEEP MODE ---
-          - alias: Sleep
-            conditions:
-              - condition: template
-                value_template: "{{ desired_state == 'sleep' }}"
-                alias: Anyone sleeping
-            sequence:
-              - choose:
-                  # Cooling
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'cool' }}"
-                    sequence:
-                      - action: climate.set_temperature
-                        alias: Cool to desired sleep
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_hvac_mode }}"
-                  # Mid
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'mid' }}"
-                    sequence:
-                      - action: climate.set_hvac_mode
-                        alias: Sleeping fan
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          hvac_mode: fan_only
-                        enabled: true
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'heat' }}"
-                    sequence:
-                      - action: climate.set_temperature
-                        alias: Heat to desired sleep
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_hvac_mode }}"
-                enabled: true
-              - if:
-                - condition: template
-                  value_template: >-
-                    {{ desired_fan_mode != 'noop' }}
-                then:
-                  - action: climate.set_fan_mode
-                    alias: Setting fan mode
+      # --- INACTIVE MODE ---
+      - alias: Inactive
+        conditions:
+          - condition: template
+            value_template: "{{ desired_state == 'inactive' }}"
+            alias: Inactive
+        sequence:
+          - choose:
+              # Cool
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'cool' }}"
+                sequence:
+                  - action: climate.set_temperature
+                    alias: Cool to desired inactive
                     target:
                       entity_id: "{{ target_climate }}"
                     data:
-                      fan_mode: "{{ desired_fan_mode }}"
-
-          # --- INACTIVE MODE ---
-          - alias: Inactive
-            conditions:
-              - condition: template
-                value_template: "{{ desired_state == 'inactive' }}"
-                alias: Inactive
-            sequence:
-              - choose:
-                  # Cool
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'cool' }}"
-                    sequence:
-                      - action: climate.set_temperature
-                        alias: Cool to desired inactive
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_hvac_mode }}"
-                  # Mid
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'mid' }}"
-                    sequence:
-                      - action: climate.set_hvac_mode
-                        alias: Inactive off
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          hvac_mode: "off"
-                        enabled: true
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'heat' }}"
-                    sequence:
-                      - action: climate.set_temperature
-                        alias: Heat to desired inactive
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_hvac_mode }}"
-                enabled: true
-              - if:
-                - condition: template
-                  value_template: >-
-                    {{ desired_fan_mode != 'noop' }}
-                then:
-                  - action: climate.set_fan_mode
-                    alias: Setting fan mode
+                      temperature: "{{ desired_target_temp }}"
+                      hvac_mode: "{{ desired_hvac_mode }}"
+              # Mid
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'mid' }}"
+                sequence:
+                  - action: climate.set_hvac_mode
+                    alias: Inactive off
                     target:
                       entity_id: "{{ target_climate }}"
                     data:
-                      fan_mode: "{{ desired_fan_mode }}"
-
-          # --- ACTIVE MODE ---
-          - alias: Active
-            conditions:
-              - condition: template
-                value_template: "{{ desired_state == 'active' }}"
-                alias: Active
-            sequence:
-              - choose:
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'cool' }}"
-                    sequence:
-                      - action: climate.set_temperature
-                        alias: Cool to preferred active
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_hvac_mode }}"
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'mid' }}"
-                    sequence:
-                      - action: climate.set_hvac_mode
-                        alias: Mid
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          hvac_mode: "off"
-                        enabled: true
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ desired_hvac_mode == 'heat' }}"
-                    sequence:
-                      - action: climate.set_temperature
-                        alias: Heat to preferred active
-                        target:
-                          entity_id: "{{ target_climate }}"
-                        data:
-                          temperature: "{{ desired_target_temp }}"
-                          hvac_mode: "{{ desired_hvac_mode }}"
-                enabled: true
-              - if:
-                - condition: template
-                  value_template: >-
-                    {{ desired_fan_mode != 'noop' }}
-                then:
-                  - action: climate.set_fan_mode
-                    alias: Setting fan mode
+                      hvac_mode: "off"
+                    enabled: true
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'heat' }}"
+                sequence:
+                  - action: climate.set_temperature
+                    alias: Heat to desired inactive
                     target:
                       entity_id: "{{ target_climate }}"
                     data:
-                      fan_mode: "{{ desired_fan_mode }}"
+                      temperature: "{{ desired_target_temp }}"
+                      hvac_mode: "{{ desired_hvac_mode }}"
+            enabled: true
+          - if:
+            - condition: template
+              value_template: >-
+                {{ desired_fan_mode != 'noop' }}
+            then:
+              - action: climate.set_fan_mode
+                alias: Setting fan mode
+                target:
+                  entity_id: "{{ target_climate }}"
+                data:
+                  fan_mode: "{{ desired_fan_mode }}"
+
+      # --- ACTIVE MODE ---
+      - alias: Active
+        conditions:
+          - condition: template
+            value_template: "{{ desired_state == 'active' }}"
+            alias: Active
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'cool' }}"
+                sequence:
+                  - action: climate.set_temperature
+                    alias: Cool to preferred active
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      temperature: "{{ desired_target_temp }}"
+                      hvac_mode: "{{ desired_hvac_mode }}"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'mid' }}"
+                sequence:
+                  - action: climate.set_hvac_mode
+                    alias: Mid
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      hvac_mode: "off"
+                    enabled: true
+              - conditions:
+                  - condition: template
+                    value_template: "{{ desired_hvac_mode == 'heat' }}"
+                sequence:
+                  - action: climate.set_temperature
+                    alias: Heat to preferred active
+                    target:
+                      entity_id: "{{ target_climate }}"
+                    data:
+                      temperature: "{{ desired_target_temp }}"
+                      hvac_mode: "{{ desired_hvac_mode }}"
+            enabled: true
+          - if:
+            - condition: template
+              value_template: >-
+                {{ desired_fan_mode != 'noop' }}
+            then:
+              - action: climate.set_fan_mode
+                alias: Setting fan mode
+                target:
+                  entity_id: "{{ target_climate }}"
+                data:
+                  fan_mode: "{{ desired_fan_mode }}"
