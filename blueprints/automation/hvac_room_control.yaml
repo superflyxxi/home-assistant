@@ -103,7 +103,7 @@ blueprint:
         entity:
           domain: input_number
     default_heat_active_temp:
-      name: Default Heat Active Temperature
+      name: Active Heat Temperature
       description: The desired target temperature when heating and active.
       default: 68
       selector:
@@ -114,7 +114,7 @@ blueprint:
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
     default_heat_inactive_temp:
-      name: Default Heat Inactive Temperature
+      name: Inactive Heat Temperature
       description: The desired target temperature when heating and inactive.
       default: 64
       selector:
@@ -125,7 +125,7 @@ blueprint:
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
     default_heat_sleep_temp:
-      name: Default Heat Sleeping Temperature
+      name: Sleeping Heat Temperature
       description: The desired target temperature when heating and sleeping.
       default: 66
       selector:
@@ -136,7 +136,7 @@ blueprint:
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
     default_cool_active_temp:
-      name: Default Cool Active Temperature
+      name: Active Cool Temperature
       description: The desired target temperature when cooling and active.
       default: 76
       selector:
@@ -147,7 +147,7 @@ blueprint:
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
     default_cool_inactive_temp:
-      name: Default Cool Inactive Temperature
+      name: Inactive Cool Temperature
       description: The desired target temperature when cooling and inactive.
       default: 80
       selector:
@@ -158,7 +158,7 @@ blueprint:
           unit_of_measurement: "°F" # or "°C"
           mode: slider              # Options: "slider" or "box"
     default_cool_sleep_temp:
-      name: Default Cool Sleeping Temperature
+      name: Sleeping Cool Temperature
       description: The desired target temperature when cooling and sleeping.
       default: 78
       selector:
