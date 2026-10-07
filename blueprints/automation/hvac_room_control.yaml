@@ -256,7 +256,7 @@ actions:
   - alias: "Determine throttle variable"
     variables:
       duration_seconds: >-
-        {{ as_timedelta(duration_between_executions).total_seconds() }}
+        {{ timedelta(**duration_between_executions).total_seconds() }}
       seconds_since_last_run: >-
         {{ as_timestamp(now()) - as_timestamp(this.attributes.last_triggered) }}
   - alias: "Throttle: Wait if triggered recently"
