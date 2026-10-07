@@ -183,6 +183,123 @@ blueprint:
           enable_millisecond: false
 mode: queued
 max: 10
+variables:
+  is_guest_supported: !input enable_guest
+  outdoor_temp_sensor: !input outdoor_temp_sensor
+  hvac_mode_select: !input hvac_mode_select
+  hot_weather_temp_entity: !input hot_weather_temp
+  cold_weather_temp_entity: !input cold_weather_temp
+  home_persons: !input home_persons
+  target_climate: !input target_climate
+  active_entities: !input active_entities
+  required_entities: !input required_entities
+  hvac_active_heat_temp: !input default_heat_active_temp
+  hvac_active_cool_temp: !input default_cool_active_temp
+  hvac_inactive_heat_temp: !input default_heat_inactive_temp
+  hvac_inactive_cool_temp: !input default_cool_inactive_temp
+  hvac_sleep_heat_temp: !input default_heat_sleep_temp
+  hvac_sleep_cool_temp: !input default_cool_sleep_temp
+  target_temp_action: !input target_temp_action
+  target_temp_action_buffer: !input target_temp_action_buffer
+  enable_temp_action_sleep: !input enable_temp_action_sleep
+  sleeping_sensors: !input sleeping_sensors
+  duration_between_executions: !input duration_between_executions
+  default_unknown_temp: 72
+  duration_seconds: >-
+    {{ timedelta(**duration_between_executions).total_seconds() }}
+  seconds_since_last_run: >-
+    {{ as_timestamp(now()) - as_timestamp(this.attributes.last_triggered) }}
+  current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
+  current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
+  current_state: "{{ states(target_climate) }}"
+  outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
+  people_home: >
+    {{ home_persons | select('is_state', 'home') | map('state_attr', 'friendly_name') | map('lower') | list }}
+  on_required_entities: >-
+    {{ required_entities | select('is_state', 'on') | list }}
+  on_active_entities: >-
+    {{ active_entities | select('is_state', 'on') | list }}
+  active_entity_labels: >-
+    {{ on_active_entities | map('labels') | sum(start=[]) | map('lower') | list }}
+  active_people: >-
+    {{ active_entity_labels | select('in', people_home) | list }}
+  is_active: >-
+    {{ (on_required_entities|length>0 and active_people|length>0) or states(hvac_mode_select) == 'Home' }}
+  on_sleep_entities: >-
+    {{ sleeping_sensors | select('is_state', 'on') | list }}
+  sleep_entity_labels: >-
+    {{ on_sleep_entities | map('labels') | sum(start=[]) | map('lower') | list }}
+  sleep_people: >-
+    {{ sleep_entity_labels | select('in', people_home) | list }}
+  is_sleeping: >-
+    {{ sleep_people|length >0 or states(hvac_mode_select) == 'Sleep' }}
+  desired_hvac_mode: >-
+    {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
+      cool
+    {% elif outdoor_temp < states(cold_weather_temp_entity)|float(default_unknown_temp) %}
+      heat
+    {% else %}
+      mid
+    {% endif %}
+  desired_fan_mode: noop
+  # mode is based on the following
+  # 1. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
+  # 2. If select input is off; then off
+  # 3. if at least one sleeping sensor on or hvac mode is sleep; sleep
+  # 4. if at least one required sensor is on and at least one active sensor is on; then active
+  # otherwise inactive
+  initial_desired_state: >-
+    {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+      noop
+    {% elif is_state(hvac_mode_select,'Off') %}
+      off
+    {% elif is_sleeping %}
+      sleep
+    {% elif is_active %}
+      active
+    {% else %}
+      inactive
+    {% endif %}
+  desired_target_temp: >-
+    {% if desired_hvac_mode == 'heat' %}
+      {% if initial_desired_state == 'sleep' %}
+        {{ hvac_sleep_heat_temp }}
+      {% elif initial_desired_state == 'active' %}
+        {{ hvac_active_heat_temp }}
+      {% else %}
+        {{ hvac_inactive_heat_temp }}
+      {% endif %}
+    {% elif desired_hvac_mode == 'cool' %}
+      {% if initial_desired_state == 'sleep' %}
+        {{ hvac_sleep_cool_temp }}
+      {% elif initial_desired_state == 'active' %}
+        {{ hvac_active_cool_temp }}
+      {% else %}
+        {{ hvac_inactive_cool_temp }}
+      {% endif %}
+    {% else %}
+      {{ default_unknown_temp }}
+    {% endif %} 
+  # override based on other modes
+  # if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
+  # and current_target_temp is equals desired_target_temp
+  #   if heating and current > target; then off
+  #   if cooling and current < target; then off
+  #   otherwise, continue
+  override_desired_state: >-
+    {% if target_temp_action == 'Turn Off'
+      and current_state in ['off', desired_hvac_mode]
+      and (enable_temp_action_sleep or not is_sleeping)
+      and desired_target_temp == current_target_temp
+      and (
+        (desired_hvac_mode == 'heat' and current_temp > (current_target_temp + target_temp_action_buffer))
+          or (desired_hvac_mode == 'cool' and current_temp < (current_target_temp - target_temp_action_buffer))
+      ) %}
+      off
+    {% else %}
+      none
+    {% endif %}
+  desired_state: "{{ initial_desired_state if override_desired_state == 'none' else override_desired_state }}"
 
 triggers:
   # Current temperatur of target climate changes at least for 60s.
@@ -230,35 +347,6 @@ condition:
     value_template: "{{ trigger.id != 'current_temp_changed' or target_temp_action != 'Auto' }}"
 
 actions:
-  - alias: "Inputs"
-    variables:
-      is_guest_supported: !input enable_guest
-      outdoor_temp_sensor: !input outdoor_temp_sensor
-      hvac_mode_select: !input hvac_mode_select
-      hot_weather_temp_entity: !input hot_weather_temp
-      cold_weather_temp_entity: !input cold_weather_temp
-      home_persons: !input home_persons
-      target_climate: !input target_climate
-      active_entities: !input active_entities
-      required_entities: !input required_entities
-      hvac_active_heat_temp: !input default_heat_active_temp
-      hvac_active_cool_temp: !input default_cool_active_temp
-      hvac_inactive_heat_temp: !input default_heat_inactive_temp
-      hvac_inactive_cool_temp: !input default_cool_inactive_temp
-      hvac_sleep_heat_temp: !input default_heat_sleep_temp
-      hvac_sleep_cool_temp: !input default_cool_sleep_temp
-      target_temp_action: !input target_temp_action
-      target_temp_action_buffer: !input target_temp_action_buffer
-      enable_temp_action_sleep: !input enable_temp_action_sleep
-      sleeping_sensors: !input sleeping_sensors
-      duration_between_executions: !input duration_between_executions
-      default_unknown_temp: 72
-  - alias: "Determine throttle variable"
-    variables:
-      duration_seconds: >-
-        {{ timedelta(**duration_between_executions).total_seconds() }}
-      seconds_since_last_run: >-
-        {{ as_timestamp(now()) - as_timestamp(this.attributes.last_triggered) }}
   - alias: "Throttle: Wait if triggered recently"
     if:
       - condition: template
@@ -268,100 +356,6 @@ actions:
       - delay:
           seconds: >-
             {{ (duration_seconds - seconds_since_last_run)|round(0) }}
-  - alias: "Dynamic Variables"
-    variables:
-      current_temp: "{{ state_attr(target_climate, 'current_temperature') | float(default_unknown_temp) }}"
-      current_target_temp: "{{ state_attr(target_climate, 'temperature') | float(default_unknown_temp) }}"
-      current_state: "{{ states(target_climate) }}"
-      outdoor_temp: "{{ states(outdoor_temp_sensor)|float(default_unknown_temp) }}"
-      people_home: >
-        {{ home_persons | select('is_state', 'home') | map('state_attr', 'friendly_name') | map('lower') | list }}
-      on_required_entities: >-
-        {{ required_entities | select('is_state', 'on') | list }}
-      on_active_entities: >-
-        {{ active_entities | select('is_state', 'on') | list }}
-      active_entity_labels: >-
-        {{ on_active_entities | map('labels') | sum(start=[]) | map('lower') | list }}
-      active_people: >-
-        {{ active_entity_labels | select('in', people_home) | list }}
-      is_active: >-
-        {{ (on_required_entities|length>0 and active_people|length>0) or states(hvac_mode_select) == 'Home' }}
-      on_sleep_entities: >-
-        {{ sleeping_sensors | select('is_state', 'on') | list }}
-      sleep_entity_labels: >-
-        {{ on_sleep_entities | map('labels') | sum(start=[]) | map('lower') | list }}
-      sleep_people: >-
-        {{ sleep_entity_labels | select('in', people_home) | list }}
-      is_sleeping: >-
-        {{ sleep_people|length >0 or states(hvac_mode_select) == 'Sleep' }}
-      desired_hvac_mode: >-
-        {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
-          cool
-        {% elif outdoor_temp < states(cold_weather_temp_entity)|float(default_unknown_temp) %}
-          heat
-        {% else %}
-          mid
-        {% endif %}
-      desired_fan_mode: noop
-      # mode is based on the following
-      # 1. if guest or manual or (outdoor temp changed but current mode and desired mode are the same); then noop or no changes
-      # 2. If select input is off; then off
-      # 3. if at least one sleeping sensor on or hvac mode is sleep; sleep
-      # 4. if at least one required sensor is on and at least one active sensor is on; then active
-      # otherwise inactive
-      initial_desired_state: >-
-        {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
-          noop
-        {% elif is_state(hvac_mode_select,'Off') %}
-          off
-        {% elif is_sleeping %}
-          sleep
-        {% elif is_active %}
-          active
-        {% else %}
-          inactive
-        {% endif %}
-      desired_target_temp: >-
-        {% if desired_hvac_mode == 'heat' %}
-          {% if initial_desired_state == 'sleep' %}
-            {{ hvac_sleep_heat_temp }}
-          {% elif initial_desired_state == 'active' %}
-            {{ hvac_active_heat_temp }}
-          {% else %}
-            {{ hvac_inactive_heat_temp }}
-          {% endif %}
-        {% elif desired_hvac_mode == 'cool' %}
-          {% if initial_desired_state == 'sleep' %}
-            {{ hvac_sleep_cool_temp }}
-          {% elif initial_desired_state == 'active' %}
-            {{ hvac_active_cool_temp }}
-          {% else %}
-            {{ hvac_inactive_cool_temp }}
-          {% endif %}
-        {% else %}
-          {{ default_unknown_temp }}
-        {% endif %} 
-      # override based on other modes
-      # if turn off when target temp is reached and new mode is matching existing mode and triggered by current temp
-      # and current_target_temp is equals desired_target_temp
-      #   if heating and current > target; then off
-      #   if cooling and current < target; then off
-      #   otherwise, continue
-      override_desired_state: >-
-        {% if target_temp_action == 'Turn Off'
-          and current_state in ['off', desired_hvac_mode]
-          and (enable_temp_action_sleep or not is_sleeping)
-          and desired_target_temp == current_target_temp
-          and (
-            (desired_hvac_mode == 'heat' and current_temp > (current_target_temp + target_temp_action_buffer))
-              or (desired_hvac_mode == 'cool' and current_temp < (current_target_temp - target_temp_action_buffer))
-          ) %}
-          off
-        {% else %}
-          none
-        {% endif %}
-      desired_state: "{{ initial_desired_state if override_desired_state == 'none' else override_desired_state }}"
-
   - if:
       - condition: template
         value_template: >-
