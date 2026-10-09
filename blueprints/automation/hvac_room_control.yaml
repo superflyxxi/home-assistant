@@ -92,16 +92,26 @@ blueprint:
         trigger: {}
     hot_weather_temp:
       name: Hot Weather Temperature Threshold
-      description: Input number defining the threshold above which cooling is activated.
+      description: The temperature threshold above which cooling is activated.
+      default: 75
       selector:
-        entity:
-          domain: input_number
+        number:
+          min: 60
+          max: 80
+          step: 1
+          unit_of_measurement: "°F"
+          mode: slider
     cold_weather_temp:
       name: Cold Weather Temperature Threshold
-      description: Input number defining the threshold below which heating is activated.
+      description: The temperature threshold below which heating is activated.
+      default: 69
       selector:
-        entity:
-          domain: input_number
+        number:
+          min: 50
+          max: 70
+          step: 1
+          unit_of_measurement: "°F"
+          mode: slider
     default_heat_active_temp:
       name: Active Heat Temperature
       description: The desired target temperature when heating and active.
@@ -187,8 +197,8 @@ variables:
   is_guest_supported: !input enable_guest
   outdoor_temp_sensor: !input outdoor_temp_sensor
   hvac_mode_select: !input hvac_mode_select
-  hot_weather_temp_entity: !input hot_weather_temp
-  cold_weather_temp_entity: !input cold_weather_temp
+  hot_weather_temp: !input hot_weather_temp
+  cold_weather_temp: !input cold_weather_temp
   home_persons: !input home_persons
   target_climate: !input target_climate
   active_entities: !input active_entities
@@ -234,9 +244,9 @@ variables:
   is_sleeping: >-
     {{ sleep_people|length >0 or is_state(hvac_mode_select, 'Sleep') }}
   desired_hvac_mode: >-
-    {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
+    {% if outdoor_temp > hot_weather_temp %}
       cool
-    {% elif outdoor_temp < states(cold_weather_temp_entity)|float(default_unknown_temp) %}
+    {% elif outdoor_temp < cold_weather_temp %}
       heat
     {% else %}
       mid
