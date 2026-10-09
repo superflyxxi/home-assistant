@@ -5,179 +5,194 @@ blueprint:
     HVAC modes and setpoints for a single specified area.
   domain: automation
   input:
-    target_climate:
-      name: Target climate
-      description: The target climate control to set.
-      selector:
-        entity:
-          domain: climate
+    trigger_inputs:
+      name: "Minimum"
+      description: "Minimum configurations and triggers"
+      collapsed: false
+      input:
+        target_climate:
+          name: Target climate
+          description: The target climate control to set.
+          selector:
+            entity:
+              domain: climate
+        hvac_mode_select:
+          name: HVAC Mode Input Select
+          description: The input select controlling the automation mode (Off, Auto, Guest, Away, Home).
+          selector:
+            entity:
+              domain: input_select
+        outdoor_temp_sensor:
+          name: Outdoor Temperature Sensor
+          description: Sensor used to monitor current outdoor temperature to determine heat/cool/mid modes.
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
+        required_entities:
+          name: Required Entities
+          description: Entities that when any are "on" will result in the room being active.
+          selector:
+            entity:
+              multiple: true
+        active_entities:
+          name: Active Entities
+          description: Once Required Entities conditions are met and any of these Active Entities are "on", the climate will be active.
+          default: []
+          selector:
+            entity:
+              multiple: true
+        home_persons:
+          name: Home Persons
+          description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
+          default: []
+          selector:
+            entity:
+              domain: person
+              multiple: true
+        sleeping_sensors:
+          name: Sleeping Sensors
+          description: Select sleeping sensors that determine whether anyone in the room is sleeping (sensor "on") and to set target sleep temperatures.
+          default: []
+          selector:
+            entity:
+              multiple: true
+        other_trigger:
+          name: Other Trigger
+          description: Any other trigger like time of day or other schedule.
+          default: []
+          selector:
+            trigger: {}
     enable_guest:
       name: Enable Guest Mode
       description: When enabled and Guest mode is activated, the target climate will not change.
       default: false
       selector:
         boolean: {}
-    target_temp_action:
-      name: Action On Reaching Target Temperature
-      description: When the target temperature is reached, determine what action to take. Auto, let it run as is. Turn Off, turn off the climate; this is useful for rooms where the blowing of air can feel uncomfortable. Quiet Fan, change the fan mode to quiet.
-      default: "Auto"
-      selector:
-        select:
-          options:
-            - "Auto"
-            - "Turn Off"
-            #- "Quiet Fan"
-    target_temp_action_buffer:
-      name: Target Temperation Action Buffer
-      description: The degrees buffer in which to perform the target action.
-      default: 0.0
-      selector:
-        number:
-          min: 0
-          max: 2
-          step: 0.5
-          mode: slider              # Options: "slider" or "box"
-    enable_temp_action_sleep:
-      name: Enable Target Temperature Action on Sleep
-      description: When enabled, the target climate will not change when sleeping.
-      default: false
-      selector:
-        boolean: {}
-    home_persons:
-      name: Home Persons
-      description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
-      default: []
-      selector:
-        entity:
-          domain: person
-          multiple: true
-    required_entities:
-      name: Required Entities
-      description: Entities that when any are "on" will result in the room being active.
-      selector:
-        entity:
-          multiple: true
-    active_entities:
-      name: Active Entities
-      description: Once Required Entities conditions are met and any of these Active Entities are "on", the climate will be active.
-      default: []
-      selector:
-        entity:
-          multiple: true
-    sleeping_sensors:
-      name: Sleeping Sensors
-      description: Select sleeping sensors that determine whether anyone in the room is sleeping (sensor "on") and to set target sleep temperatures.
-      default: []
-      selector:
-        entity:
-          multiple: true
-    outdoor_temp_sensor:
-      name: Outdoor Temperature Sensor
-      description: Sensor used to monitor current outdoor temperature to determine heat/cool/mid modes.
-      selector:
-        entity:
-          domain: sensor
-          device_class: temperature
-    hvac_mode_select:
-      name: HVAC Mode Input Select
-      description: The input select controlling the automation mode (Off, Auto, Guest, Away, Home).
-      selector:
-        entity:
-          domain: input_select
-    other_trigger:
-      name: Other Trigger
-      description: Any other trigger like time of day or other schedule.
-      default: []
-      selector:
-        trigger: {}
-    hot_weather_temp:
-      name: Hot Weather Temperature Threshold
-      description: The temperature threshold above which cooling is activated.
-      default: 75
-      selector:
-        number:
-          min: 60
-          max: 80
-          step: 1
-          unit_of_measurement: "°F"
-          mode: slider
-    cold_weather_temp:
-      name: Cold Weather Temperature Threshold
-      description: The temperature threshold below which heating is activated.
-      default: 69
-      selector:
-        number:
-          min: 50
-          max: 70
-          step: 1
-          unit_of_measurement: "°F"
-          mode: slider
-    default_heat_active_temp:
-      name: Active Heat Temperature
-      description: The desired target temperature when heating and active.
-      default: 68
-      selector:
-        number:
-          min: 60
-          max: 75
-          step: 1
-          unit_of_measurement: "°F" # or "°C"
-          mode: slider              # Options: "slider" or "box"
-    default_heat_inactive_temp:
-      name: Inactive Heat Temperature
-      description: The desired target temperature when heating and inactive.
-      default: 64
-      selector:
-        number:
-          min: 60
-          max: 75
-          step: 1
-          unit_of_measurement: "°F" # or "°C"
-          mode: slider              # Options: "slider" or "box"
-    default_heat_sleep_temp:
-      name: Sleeping Heat Temperature
-      description: The desired target temperature when heating and sleeping.
-      default: 66
-      selector:
-        number:
-          min: 60
-          max: 75
-          step: 1
-          unit_of_measurement: "°F" # or "°C"
-          mode: slider              # Options: "slider" or "box"
-    default_cool_active_temp:
-      name: Active Cool Temperature
-      description: The desired target temperature when cooling and active.
-      default: 76
-      selector:
-        number:
-          min: 70
-          max: 85
-          step: 1
-          unit_of_measurement: "°F" # or "°C"
-          mode: slider              # Options: "slider" or "box"
-    default_cool_inactive_temp:
-      name: Inactive Cool Temperature
-      description: The desired target temperature when cooling and inactive.
-      default: 80
-      selector:
-        number:
-          min: 70
-          max: 85
-          step: 1
-          unit_of_measurement: "°F" # or "°C"
-          mode: slider              # Options: "slider" or "box"
-    default_cool_sleep_temp:
-      name: Sleeping Cool Temperature
-      description: The desired target temperature when cooling and sleeping.
-      default: 78
-      selector:
-        number:
-          min: 70
-          max: 85
-          step: 1
-          unit_of_measurement: "°F" # or "°C"
-          mode: slider              # Options: "slider" or "box"
+    target_temp_inputs:
+      name: "Target Temperature Actions"
+      description: "Inputs related to what happens when target temperature is reached."
+      collapsed: true
+      input:
+        target_temp_action:
+          name: Action On Reaching Target Temperature
+          description: When the target temperature is reached, determine what action to take. Auto, let it run as is. Turn Off, turn off the climate; this is useful for rooms where the blowing of air can feel uncomfortable. Quiet Fan, change the fan mode to quiet.
+          default: "Auto"
+          selector:
+            select:
+              options:
+                - "Auto"
+                - "Turn Off"
+                #- "Quiet Fan"
+        target_temp_action_buffer:
+          name: Target Temperation Action Buffer
+          description: The degrees buffer in which to perform the target action.
+          default: 0.0
+          selector:
+            number:
+              min: 0
+              max: 2
+              step: 0.5
+              mode: slider
+        enable_temp_action_sleep:
+          name: Enable Target Temperature Action on Sleep
+          description: When enabled, the target climate will not change when sleeping.
+          default: false
+          selector:
+            boolean: {}
+    temperature_inputs:
+      name: "Temperature"
+      description: "Temperature settings"
+      collapsed: true
+      input:
+        hot_weather_temp:
+          name: Hot Weather Temperature Threshold
+          description: The temperature threshold above which cooling is activated.
+          default: 75
+          selector:
+            number:
+              min: 60
+              max: 80
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        cold_weather_temp:
+          name: Cold Weather Temperature Threshold
+          description: The temperature threshold below which heating is activated.
+          default: 69
+          selector:
+            number:
+              min: 50
+              max: 70
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        default_heat_active_temp:
+          name: Active Heat Temperature
+          description: The desired target temperature when heating and active.
+          default: 68
+          selector:
+            number:
+              min: 60
+              max: 75
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        default_heat_inactive_temp:
+          name: Inactive Heat Temperature
+          description: The desired target temperature when heating and inactive.
+          default: 64
+          selector:
+            number:
+              min: 60
+              max: 75
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        default_heat_sleep_temp:
+          name: Sleeping Heat Temperature
+          description: The desired target temperature when heating and sleeping.
+          default: 66
+          selector:
+            number:
+              min: 60
+              max: 75
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        default_cool_active_temp:
+          name: Active Cool Temperature
+          description: The desired target temperature when cooling and active.
+          default: 76
+          selector:
+            number:
+              min: 70
+              max: 85
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        default_cool_inactive_temp:
+          name: Inactive Cool Temperature
+          description: The desired target temperature when cooling and inactive.
+          default: 80
+          selector:
+            number:
+              min: 70
+              max: 85
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
+        default_cool_sleep_temp:
+          name: Sleeping Cool Temperature
+          description: The desired target temperature when cooling and sleeping.
+          default: 78
+          selector:
+            number:
+              min: 70
+              max: 85
+              step: 1
+              unit_of_measurement: "°F"
+              mode: slider
     duration_between_executions:
       name: Duration Between Executions
       description: >-
