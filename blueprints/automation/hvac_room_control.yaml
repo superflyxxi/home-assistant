@@ -224,7 +224,7 @@ variables:
   active_people: >-
     {{ active_entity_labels | select('in', people_home) | list }}
   is_active: >-
-    {{ (on_required_entities|length>0 and active_people|length>0) or states(hvac_mode_select) == 'Home' }}
+    {{ (on_required_entities|length>0 and active_people|length>0) or is_state(hvac_mode_select, 'Home') }}
   on_sleep_entities: >-
     {{ sleeping_sensors | select('is_state', 'on') | list }}
   sleep_entity_labels: >-
@@ -232,7 +232,7 @@ variables:
   sleep_people: >-
     {{ sleep_entity_labels | select('in', people_home) | list }}
   is_sleeping: >-
-    {{ sleep_people|length >0 or states(hvac_mode_select) == 'Sleep' }}
+    {{ sleep_people|length >0 or is_state(hvac_mode_select, 'Sleep') }}
   desired_hvac_mode: >-
     {% if outdoor_temp > states(hot_weather_temp_entity)|float(default_unknown_temp) %}
       cool
@@ -249,7 +249,9 @@ variables:
   # 4. if at least one required sensor is on and at least one active sensor is on; then active
   # otherwise inactive
   initial_desired_state: >-
-    {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == current_state) or (is_guest_supported and states(hvac_mode_select) == 'Guest') or states(hvac_mode_select) == 'Manual' %}
+    {% if (trigger.id in ['outdoor_temp_changed'] and desired_hvac_mode == current_state) 
+        or (is_guest_supported and is_state(hvac_mode_select, 'Guest')) 
+        or is_state(hvac_mode_select, 'Manual') %}
       noop
     {% elif is_state(hvac_mode_select,'Off') %}
       off
