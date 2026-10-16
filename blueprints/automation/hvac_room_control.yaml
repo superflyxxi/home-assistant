@@ -317,12 +317,26 @@ variables:
     {% if target_temp_action == 'Turn Off'
       and current_state in ['off', desired_hvac_mode]
       and (enable_temp_action_sleep or not is_sleeping)
-      and desired_target_temp == current_target_temp
-      and (
-        (desired_hvac_mode == 'heat' and current_temp > (current_target_temp + target_temp_action_buffer))
-          or (desired_hvac_mode == 'cool' and current_temp < (current_target_temp - target_temp_action_buffer))
-      ) %}
-      off
+      and desired_target_temp == current_target_temp %}
+      {% if desired_hvac_mode == 'heat' %}
+        {% if current_temp > (current_target_temp + target_temp_action_buffer) %}
+          off
+        {% elif current_temp >= desired_target_temp %}
+          noop
+        {% else %}
+          none
+        {% endif %}
+      {% elif desired_hvac_mode == 'cool' %}
+        {% if current_temp < (current_target_temp - target_temp_action_buffer) %}
+          off
+        {% elif current_temp <= current_target_temp %}
+          noop
+        {% else %}
+          none
+        {% endif %}
+      {% else %}
+        none
+      {% endif %}
     {% else %}
       none
     {% endif %}
