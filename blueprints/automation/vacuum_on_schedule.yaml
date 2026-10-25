@@ -10,7 +10,7 @@ blueprint:
             - domain: vacuum
     schedule:
       selector:
-        entity:
+        entity: {}
 mode: single
 triggers:
   - trigger: state
