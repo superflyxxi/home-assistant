@@ -2,7 +2,7 @@ blueprint:
   name: Sleeping Tracker & Prediction Calendar
   description: >
     Logs actual sleep sessions when waking up and generates 10th percentile sleep predictions
-    for tomorrow using native Home Assistant calendar actions.
+    for tomorrow, falling back to the past 3 days of data if specific weekday history is missing.
   domain: automation
   input:
     sleeping_sensor:
@@ -80,30 +80,47 @@ action:
           end_date_time: "{{ now().strftime('%Y-%m-%d 23:59:59') }}"
         response_variable: past_events
 
-      # Step 2: Calculate 10th percentile for Bedtime & Wake Time from calendar history
+      # Step 2: Calculate 10th percentile with weekday filter and 3-day fallback
       - variables:
           calc: >
             {% set events = past_events[target_calendar].events if (past_events and target_calendar in past_events) else [] %}
             {% set actuals = events | selectattr('summary', 'eq', actual_summary) | list %}
             
-            {# Filter matching weekdays #}
-            {% set day_events = namespace(on=[], off=[]) %}
+            {# Try matching weekday first #}
+            {% set day_on = namespace(values=[]) %}
+            {% set day_off = namespace(values=[]) %}
             {% for e in actuals %}
               {% set start_dt = as_datetime(e.start) %}
               {% set end_dt = as_datetime(e.end) %}
-              
               {% if start_dt.strftime('%A') == t_day %}
-                {% set day_events.on = day_events.on + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
-              {% endif %}
-              
-              {% if end_dt.strftime('%A') == t_day %}
-                {% set day_events.off = day_events.off + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
+                {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
               {% endif %}
             {% endfor %}
             
+            {# Fallback to past 3 days if no data for this weekday #}
+            {% if day_on.values | length == 0 %}
+              {% set fb_on = namespace(values=[]) %}
+              {% set fb_off = namespace(values=[]) %}
+              {% set cutoff = now() - timedelta(days=3) %}
+              {% for e in actuals %}
+                {% set start_dt = as_datetime(e.start) %}
+                {% set end_dt = as_datetime(e.end) %}
+                {% if start_dt >= cutoff %}
+                  {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
+                  {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                {% endif %}
+              {% endfor %}
+              {% set final_on = fb_on.values %}
+              {% set final_off = fb_off.values %}
+            {% else %}
+              {% set final_on = day_on.values %}
+              {% set final_off = day_off.values %}
+            {% endif %}
+            
             {# --- 10th Percentile Bedtime (ON) --- #}
-            {% if day_events.on | length > 0 %}
-              {% set s_on = day_events.on | sort %}
+            {% if final_on | length > 0 %}
+              {% set s_on = final_on | sort %}
               {% set idx_on = (((10 / 100) * (s_on | length - 1)) | round(0, 'common')) | int %}
               {% set idx_on = [0, [idx_on, s_on | length - 1] | min] | max %}
               {% set on_time = '%02d:%02d' | format(s_on[idx_on] // 3600, (s_on[idx_on] % 3600) // 60) %}
@@ -112,8 +129,8 @@ action:
             {% endif %}
             
             {# --- 10th Percentile Wake Time (OFF) --- #}
-            {% if day_events.off | length > 0 %}
-              {% set s_off = day_events.off | sort %}
+            {% if final_off | length > 0 %}
+              {% set s_off = final_off | sort %}
               {% set idx_off = (((10 / 100) * (s_off | length - 1)) | round(0, 'common')) | int %}
               {% set idx_off = [0, [idx_off, s_off | length - 1] | min] | max %}
               {% set off_time = '%02d:%02d' | format(s_off[idx_off] // 3600, (s_off[idx_off] % 3600) // 60) %}
@@ -121,7 +138,7 @@ action:
               {% set off_time = '07:00' %}
             {% endif %}
             
-            {{ {'on': on_time, 'off': off_time, 'samples': day_events.on | length} | to_json }}
+            {{ {'on': on_time, 'off': off_time, 'samples': final_on | length} | to_json }}
 
           calc_res: "{{ (calc | string).strip() | from_json(default={'on':'22:00','off':'07:00','samples':0}) }}"
 
@@ -148,7 +165,7 @@ action:
             data:
               summary: "{{ predicted_summary }}"
               description: >
-                Calculated dynamically from {{ calc_res.samples }} actual sleep calendar logs for {{ t_day }}.
+                Calculated dynamically from {{ calc_res.samples }} actual sleep calendar logs (weekday match or past 3-day fallback) for {{ t_day }}.
               start_date_time: >
                 {{ t_date ~ ' ' ~ calc_res.on ~ ':00' }}
               end_date_time: >
