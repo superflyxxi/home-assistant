@@ -29,5 +29,6 @@ workflows:
     jobs:
       - yaml-lint
       - release-notes:
+          context: default
           requires:
             - yaml-lint
