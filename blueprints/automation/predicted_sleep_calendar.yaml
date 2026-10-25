@@ -1,0 +1,126 @@
+blueprint:
+  name: Predicted Sleep Schedule to Calendar
+  description: >
+    Calculates 90th percentile ON time and 10th percentile OFF time for tomorrow
+    based on a history template sensor, clears existing predictions, and creates a calendar event.
+  domain: automation
+  input:
+    history_sensor:
+      name: History Log Sensor
+      description: The template sensor containing the state transition history log attribute.
+      selector:
+        entity:
+          domain: sensor
+    target_calendar:
+      name: Target Calendar
+      description: The calendar entity where predicted sleep events will be created.
+      selector:
+        entity:
+          domain: calendar
+    execution_time:
+      name: Daily Execution Time
+      description: Time of day to calculate predictions for tomorrow.
+      default: "01:00:00"
+      selector:
+        time: {}
+
+trigger:
+  - platform: time
+    at: !input execution_time
+
+action:
+  - variables:
+      sensor_entity: !input history_sensor
+      target_calendar: !input target_calendar
+      
+      # Derive event name dynamically from history sensor's friendly name
+      sensor_name: "{{ state_attr(sensor_entity, 'friendly_name') or 'Sleeping Sensor' }}"
+      event_summary: "{{ sensor_name ~ ' Predicted Sleep' }}"
+      
+      t_date: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
+      t_day: "{{ (now() + timedelta(days=1)).strftime('%A') }}"
+      
+      # Calculate percentiles directly as a JSON string
+      calc: >
+        {% set raw_log = state_attr(sensor_entity, 'history') %}
+        {% set history = raw_log if raw_log is list else [] %}
+        {% set day_history = history | selectattr('weekday', 'eq', t_day) | list %}
+        
+        {# --- 90th Percentile ON --- #}
+        {% set on_entries = day_history | selectattr('state', 'eq', 'on') | list %}
+        {% set on_vals = namespace(l=[]) %}
+        {% for e in on_entries %}
+          {% set dt = as_datetime(e.ts) %}
+          {% set on_vals.l = on_vals.l + [dt.hour * 3600 + dt.minute * 60 + dt.second] %}
+        {% endfor %}
+        
+        {% if on_vals.l | length > 0 %}
+          {% set s_on = on_vals.l | sort %}
+          {% set idx_on = (((90 / 100) * (s_on | length - 1)) | round(0, 'common')) | int %}
+          {% set idx_on = [0, [idx_on, s_on | length - 1] | min] | max %}
+          {% set on_time = '%02d:%02d' | format(s_on[idx_on] // 3600, (s_on[idx_on] % 3600) // 60) %}
+        {% else %}
+          {% set on_time = '23:00' %}
+        {% endif %}
+        
+        {# --- 10th Percentile OFF --- #}
+        {% set off_entries = day_history | selectattr('state', 'eq', 'off') | list %}
+        {% set off_vals = namespace(l=[]) %}
+        {% for e in off_entries %}
+          {% set dt = as_datetime(e.ts) %}
+          {% set off_vals.l = off_vals.l + [dt.hour * 3600 + dt.minute * 60 + dt.second] %}
+        {% endfor %}
+        
+        {% if off_vals.l | length > 0 %}
+          {% set s_off = off_vals.l | sort %}
+          {% set idx_off = (((10 / 100) * (s_off | length - 1)) | round(0, 'common')) | int %}
+          {% set idx_off = [0, [idx_off, s_off | length - 1] | min] | max %}
+          {% set off_time = '%02d:%02d' | format(s_off[idx_off] // 3600, (s_off[idx_off] % 3600) // 60) %}
+        {% else %}
+          {% set off_time = '07:00' %}
+        {% endif %}
+        
+        {{ {'on': on_time, 'off': off_time, 'samples': day_history | length} | to_json }}
+
+      # Safe parse with fallback defaults
+      calc_res: "{{ (calc | string).strip() | from_json(default={'on':'23:00','off':'07:00','samples':0}) }}"
+
+  # Step 1: Retrieve existing events for tomorrow
+  - action: calendar.get_events
+    target:
+      entity_id: "{{ target_calendar }}"
+    data:
+      start_date_time: "{{ t_date ~ ' 00:00:00' }}"
+      end_date_time: "{{ t_date ~ ' 23:59:59' }}"
+    response_variable: existing_events
+
+  # Step 2: Delete old matching prediction events
+  - repeat:
+      for_each: "{{ existing_events[target_calendar].events | selectattr('summary', 'eq', event_summary) | list if existing_events and target_calendar in existing_events else [] }}"
+      sequence:
+        - action: calendar.delete_event
+          target:
+            entity_id: "{{ target_calendar }}"
+          data:
+            summary: "{{ repeat.item.summary }}"
+            start_date_time: "{{ repeat.item.start }}"
+            end_date_time: "{{ repeat.item.end }}"
+
+  # Step 3: Create the fresh predicted event
+  - action: calendar.create_event
+    target:
+      entity_id: "{{ target_calendar }}"
+    data:
+      summary: "{{ event_summary }}"
+      description: >
+        Calculated dynamically from {{ calc_res.samples }} historical data points for {{ t_date }}.
+      start_date_time: >
+        {{ t_date ~ ' ' ~ calc_res.on ~ ':00' }}
+      end_date_time: >
+        {% set on_h = calc_res.on.split(':')[0] | int %}
+        {% set off_h = calc_res.off.split(':')[0] | int %}
+        {% if off_h <= on_h or calc_res.off < calc_res.on %}
+          {{ ((now() + timedelta(days=2)).strftime('%Y-%m-%d')) ~ ' ' ~ calc_res.off ~ ':00' }}
+        {% else %}
+          {{ t_date ~ ' ' ~ calc_res.off ~ ':00' }}
+        {% endif %}
