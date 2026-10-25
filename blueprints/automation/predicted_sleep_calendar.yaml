@@ -1,8 +1,8 @@
 blueprint:
   name: Predicted Sleep Schedule to Calendar
   description: >
-    Calculates 90th percentile ON time and 10th percentile OFF time for tomorrow
-    based on a history template sensor, replaces existing predictions for tomorrow,
+    Calculates 10th percentile ON time (earlier bedtime) and 10th percentile OFF time (earlier wake time)
+    for tomorrow based on a history template sensor, replaces existing predictions for tomorrow,
     and optionally purges past prediction events older than 7 days.
   domain: automation
   input:
@@ -54,7 +54,7 @@ action:
         {% set history = raw_log if raw_log is list else [] %}
         {% set day_history = history | selectattr('weekday', 'eq', t_day) | list %}
         
-        {# --- 90th Percentile ON --- #}
+        {# --- 10th Percentile ON (Earlier Bedtime) --- #}
         {% set on_entries = day_history | selectattr('state', 'eq', 'on') | list %}
         {% set on_vals = namespace(l=[]) %}
         {% for e in on_entries %}
@@ -64,14 +64,14 @@ action:
         
         {% if on_vals.l | length > 0 %}
           {% set s_on = on_vals.l | sort %}
-          {% set idx_on = (((90 / 100) * (s_on | length - 1)) | round(0, 'common')) | int %}
+          {% set idx_on = (((10 / 100) * (s_on | length - 1)) | round(0, 'common')) | int %}
           {% set idx_on = [0, [idx_on, s_on | length - 1] | min] | max %}
           {% set on_time = '%02d:%02d' | format(s_on[idx_on] // 3600, (s_on[idx_on] % 3600) // 60) %}
         {% else %}
-          {% set on_time = '23:00' %}
+          {% set on_time = '22:00' %}
         {% endif %}
         
-        {# --- 10th Percentile OFF --- #}
+        {# --- 10th Percentile OFF (Earlier Wake Time) --- #}
         {% set off_entries = day_history | selectattr('state', 'eq', 'off') | list %}
         {% set off_vals = namespace(l=[]) %}
         {% for e in off_entries %}
@@ -91,7 +91,7 @@ action:
         {{ {'on': on_time, 'off': off_time, 'samples': day_history | length} | to_json }}
 
       # Safe parse with fallback defaults
-      calc_res: "{{ (calc | string).strip() | from_json(default={'on':'23:00','off':'07:00','samples':0}) }}"
+      calc_res: "{{ (calc | string).strip() | from_json(default={'on':'22:00','off':'07:00','samples':0}) }}"
 
   # Step 1: Retrieve existing events for tomorrow
   - action: calendar.get_events
@@ -121,7 +121,7 @@ action:
     data:
       summary: "{{ event_summary }}"
       description: >
-        Calculated dynamically (90th % ON / 10th % OFF) from {{ calc_res.samples }} historical data points for {{ t_day }}.
+        Calculated dynamically (10th % ON / 10th % OFF) from {{ calc_res.samples }} historical data points for {{ t_day }}.
       start_date_time: >
         {{ t_date ~ ' ' ~ calc_res.on ~ ':00' }}
       end_date_time: >
