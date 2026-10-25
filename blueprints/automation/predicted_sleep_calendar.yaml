@@ -51,11 +51,11 @@ action:
     then:
       - action: calendar.create_event
         target:
-          entity_id: "{{ target_calendar }}"
+          entity_id: !input target_calendar
         data:
           summary: "{{ actual_summary }}"
           description: "Actual sleep logged automatically."
-          start_date_time: "{{ trigger.from_state.last_changed | default(now() - timedelta(hours=8)) }}"
+          start_date_time: "{{ as_local(trigger.from_state.last_changed).strftime('%Y-%m-%d %H:%M:%S') if trigger.from_state and trigger.from_state.last_changed else (now() - timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S') }}"
           end_date_time: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
   # =========================================================================
@@ -74,7 +74,7 @@ action:
       # Step 1: Fetch past 30 days of ACTUAL sleep events from calendar matching prefix
       - action: calendar.get_events
         target:
-          entity_id: "{{ target_calendar }}"
+          entity_id: !input target_calendar
         data:
           start_date_time: "{{ (now() - timedelta(days=30)).strftime('%Y-%m-%d 00:00:00') }}"
           end_date_time: "{{ now().strftime('%Y-%m-%d 23:59:59') }}"
@@ -92,7 +92,7 @@ action:
             {% for e in actuals %}
               {% set start_dt = as_datetime(e.start) %}
               {% set end_dt = as_datetime(e.end) %}
-              {% if start_dt.strftime('%A') == t_day %}
+              {% if start_dt and start_dt.strftime('%A') == t_day %}
                 {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
                 {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
               {% endif %}
@@ -106,7 +106,7 @@ action:
               {% for e in actuals %}
                 {% set start_dt = as_datetime(e.start) %}
                 {% set end_dt = as_datetime(e.end) %}
-                {% if start_dt >= cutoff %}
+                {% if start_dt and start_dt >= cutoff %}
                   {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
                   {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
                 {% endif %}
@@ -145,7 +145,7 @@ action:
       # Step 3: Check if tomorrow's prediction already exists
       - action: calendar.get_events
         target:
-          entity_id: "{{ target_calendar }}"
+          entity_id: !input target_calendar
         data:
           start_date_time: "{{ t_date ~ ' 00:00:00' }}"
           end_date_time: "{{ t_date ~ ' 23:59:59' }}"
@@ -161,7 +161,7 @@ action:
         then:
           - action: calendar.create_event
             target:
-              entity_id: "{{ target_calendar }}"
+              entity_id: !input target_calendar
             data:
               summary: "{{ predicted_summary }}"
               description: >
