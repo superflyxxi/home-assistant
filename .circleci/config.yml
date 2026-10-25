@@ -1,0 +1,33 @@
+version: 2.1
+
+orbs:
+  node: circleci/node@7
+
+jobs:
+  yaml-lint:
+    executor: node/default
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Install
+          command: npm install --save-dev eslint eslint-plugin-yml
+      - run:
+          name: Run lint
+          command: npx eslint "**/*.{yaml,yml}"
+  release-notes:
+    executor: node/default
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Run semantic-release
+          command: npx semantic-release
+
+workflows:
+  default:
+    jobs:
+      - yaml-lint
+      - release-notes:
+          requires:
+            - yaml-lint
