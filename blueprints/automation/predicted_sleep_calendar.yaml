@@ -2,7 +2,7 @@ blueprint:
   name: Sleeping Tracker & Prediction Calendar
   description: >
     Logs actual sleep sessions when waking up and generates 10th percentile sleep predictions
-    for tomorrow, falling back to the past 3 days of data if specific weekday history is missing.
+    for tomorrow, using a hashed entity ID prefix for reliable calendar tracking.
   domain: automation
   input:
     sleeping_sensor:
@@ -36,25 +36,25 @@ action:
       sensor_entity: !input sleeping_sensor
       target_calendar: !input target_calendar
       
-      # Automatically derive a clean prefix from the sleeping entity's friendly name or entity ID
-      prefix: "{{ state_attr(sensor_entity, 'friendly_name') | default(sensor_entity.split('.')[1] | replace('_', ' ') | title, true) }}"
+      # Generate a short, unique 6-character hash from the entity ID using the md5 filter
+      sensor_hash: "{{ (sensor_entity | md5)[:6] }}"
       
-      actual_summary: "{{ prefix ~ ' - Actual Sleep' }}"
-      predicted_summary: "{{ prefix ~ ' - Predicted Sleep' }}"
+      actual_summary: "{{ 'Sleep [' ~ sensor_hash ~ '] - Actual' }}"
+      predicted_summary: "{{ 'Sleep [' ~ sensor_hash ~ '] - Predicted' }}"
 
   # =========================================================================
   # BRANCH 1: LOG ACTUAL SLEEP SESSION (When waking up)
   # =========================================================================
   - if:
-      - condition: trigger
-        id: sleep_ended
+      - condition: template
+        value_template: "{{ trigger.id == 'sleep_ended' }}"
     then:
       - action: calendar.create_event
         target:
           entity_id: !input target_calendar
         data:
           summary: "{{ actual_summary }}"
-          description: "Actual sleep logged automatically."
+          description: "Actual sleep logged automatically for entity: {{ sensor_entity }}"
           start_date_time: "{{ as_local(trigger.from_state.last_changed).strftime('%Y-%m-%d %H:%M:%S') if trigger.from_state and trigger.from_state.last_changed else (now() - timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S') }}"
           end_date_time: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
 
@@ -62,16 +62,14 @@ action:
   # BRANCH 2: RUN PREDICTION (When prediction_trigger fires)
   # =========================================================================
   - if:
-      - condition: not
-        conditions:
-          - condition: trigger
-            id: sleep_ended
+      - condition: template
+        value_template: "{{ trigger.id != 'sleep_ended' }}"
     then:
       - variables:
           t_date: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
           t_day: "{{ (now() + timedelta(days=1)).strftime('%A') }}"
 
-      # Step 1: Fetch past 30 days of ACTUAL sleep events from calendar matching prefix
+      # Step 1: Fetch past 30 days of ACTUAL sleep events from calendar matching hashed prefix
       - action: calendar.get_events
         target:
           entity_id: !input target_calendar
