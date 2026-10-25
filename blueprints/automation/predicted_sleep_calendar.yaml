@@ -2,7 +2,8 @@ blueprint:
   name: Predicted Sleep Schedule to Calendar
   description: >
     Calculates 90th percentile ON time and 10th percentile OFF time for tomorrow
-    based on a history template sensor, clears existing predictions, and creates a calendar event.
+    based on a history template sensor, replaces existing predictions for tomorrow,
+    and optionally purges past prediction events older than 7 days.
   domain: automation
   input:
     history_sensor:
@@ -23,6 +24,12 @@ blueprint:
       default: "01:00:00"
       selector:
         time: {}
+    cleanup_old_events:
+      name: Clean Up Old Events
+      description: Automatically purge past predicted sleep events older than 7 days.
+      default: false
+      selector:
+        boolean: {}
 
 trigger:
   - platform: time
@@ -32,6 +39,7 @@ action:
   - variables:
       sensor_entity: !input history_sensor
       target_calendar: !input target_calendar
+      cleanup_enabled: !input cleanup_old_events
       
       # Derive event name dynamically from history sensor's friendly name
       sensor_name: "{{ state_attr(sensor_entity, 'friendly_name') or 'Sleeping Sensor' }}"
@@ -94,7 +102,7 @@ action:
       end_date_time: "{{ t_date ~ ' 23:59:59' }}"
     response_variable: existing_events
 
-  # Step 2: Delete old matching prediction events
+  # Step 2: Delete old matching prediction events for tomorrow (Clear & Replace)
   - repeat:
       for_each: "{{ existing_events[target_calendar].events | selectattr('summary', 'eq', event_summary) | list if existing_events and target_calendar in existing_events else [] }}"
       sequence:
@@ -106,14 +114,14 @@ action:
             start_date_time: "{{ repeat.item.start }}"
             end_date_time: "{{ repeat.item.end }}"
 
-  # Step 3: Create the fresh predicted event
+  # Step 3: Create the fresh predicted event for tomorrow
   - action: calendar.create_event
     target:
       entity_id: "{{ target_calendar }}"
     data:
       summary: "{{ event_summary }}"
       description: >
-        Calculated dynamically from {{ calc_res.samples }} historical data points for {{ t_date }}.
+        Calculated dynamically (90th % ON / 10th % OFF) from {{ calc_res.samples }} historical data points for {{ t_day }}.
       start_date_time: >
         {{ t_date ~ ' ' ~ calc_res.on ~ ':00' }}
       end_date_time: >
@@ -124,3 +132,27 @@ action:
         {% else %}
           {{ t_date ~ ' ' ~ calc_res.off ~ ':00' }}
         {% endif %}
+
+  # Step 4: Optionally clean up past events older than 7 days
+  - if:
+      - condition: template
+        value_template: "{{ cleanup_enabled }}"
+    then:
+      - action: calendar.get_events
+        target:
+          entity_id: "{{ target_calendar }}"
+        data:
+          start_date_time: "{{ (now() - timedelta(days=67)).strftime('%Y-%m-%d 00:00:00') }}"
+          end_date_time: "{{ (now() - timedelta(days=7)).strftime('%Y-%m-%d 23:59:59') }}"
+        response_variable: old_events
+
+      - repeat:
+          for_each: "{{ old_events[target_calendar].events | selectattr('summary', 'eq', event_summary) | list if old_events and target_calendar in old_events else [] }}"
+          sequence:
+            - action: calendar.delete_event
+              target:
+                entity_id: "{{ target_calendar }}"
+              data:
+                summary: "{{ repeat.item.summary }}"
+                start_date_time: "{{ repeat.item.start }}"
+                end_date_time: "{{ repeat.item.end }}"
