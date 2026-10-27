@@ -22,6 +22,21 @@ blueprint:
       default: []
       selector:
         trigger: {}
+    advanced:
+      name: "Advanced"
+      description: "Advanced settings"
+      collapsed: true
+      prediction_offset:
+        name: Prediction Offset
+        description: The amount of time to offset for predictions.
+        default:
+          hours: 0
+          minutes: 10
+        selector:
+          duration:
+            enable_day: false
+            enable_second: false
+            enable_millisecond: false
 
 triggers:
   - platform: state
@@ -35,6 +50,7 @@ action:
   - variables:
       sensor_entity: !input sleeping_sensor
       target_calendar: !input target_calendar
+      prediction_offset: !input prediction_offset
       
       # Generate a short, unique 6-character hash from the entity ID using the md5 filter
       sensor_hash: "{{ (sensor_entity | md5)[:6] }}"
@@ -165,12 +181,13 @@ action:
               description: >
                 Calculated dynamically from {{ calc_res.samples }} actual sleep calendar logs (weekday match or past 3-day fallback) for {{ t_day }}.
               start_date_time: >
-                {{ t_date ~ ' ' ~ calc_res.on ~ ':00' }}
+                {% set raw_start = as_datetime(t_date ~ ' ' ~ calc_res.on ~ ':00') %}
+                {% set offset = timedelta(hours=prediction_offset.get('hours', 0), minutes=prediction_offset.get('minutes', 0)) %}
+                {{ (raw_start - offset).strftime('%Y-%m-%d %H:%M:%S') }}
               end_date_time: >
                 {% set on_h = calc_res.on.split(':')[0] | int %}
                 {% set off_h = calc_res.off.split(':')[0] | int %}
-                {% if off_h <= on_h or calc_res.off < calc_res.on %}
-                  {{ ((now() + timedelta(days=2)).strftime('%Y-%m-%d')) ~ ' ' ~ calc_res.off ~ ':00' }}
-                {% else %}
-                  {{ t_date ~ ' ' ~ calc_res.off ~ ':00' }}
-                {% endif %}
+                {% set base_end_date = ((now() + timedelta(days=2)).strftime('%Y-%m-%d')) if (off_h <= on_h or calc_res.off < calc_res.on) else t_date %}
+                {% set raw_end = as_datetime(base_end_date ~ ' ' ~ calc_res.off ~ ':00') %}
+                {% set offset = timedelta(hours=prediction_offset.get('hours', 0), minutes=prediction_offset.get('minutes', 0)) %}
+                {{ (raw_end - offset).strftime('%Y-%m-%d %H:%M:%S') }}
