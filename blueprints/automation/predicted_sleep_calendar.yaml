@@ -2,7 +2,7 @@ blueprint:
   name: Sleeping Tracker & Prediction Calendar
   description: >
     Logs actual sleep sessions when waking up and generates 10th percentile sleep predictions
-    for tomorrow, using a hashed entity ID prefix for reliable calendar tracking.
+    for tonight/today, using a hashed entity ID prefix and proper local timezone handling.
   domain: automation
   input:
     sleeping_sensor:
@@ -26,17 +26,18 @@ blueprint:
       name: "Advanced"
       description: "Advanced settings"
       collapsed: true
-      prediction_offset:
-        name: Prediction Offset
-        description: The amount of time to offset for predictions.
-        default:
-          hours: 0
-          minutes: 10
-        selector:
-          duration:
-            enable_day: false
-            enable_second: false
-            enable_millisecond: false
+      input:
+        prediction_offset:
+          name: Prediction Offset
+          description: The amount of time to offset for predictions.
+          default:
+            hours: 0
+            minutes: 10
+          selector:
+            duration:
+              enable_day: false
+              enable_second: false
+              enable_millisecond: false
 
 triggers:
   - platform: state
@@ -71,8 +72,8 @@ action:
         data:
           summary: "{{ actual_summary }}"
           description: "Actual sleep logged automatically for entity: {{ sensor_entity }}"
-          start_date_time: "{{ as_local(trigger.from_state.last_changed).strftime('%Y-%m-%d %H:%M:%S') if trigger.from_state and trigger.from_state.last_changed else (now() - timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S') }}"
-          end_date_time: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          start_date_time: "{{ as_local(trigger.from_state.last_changed).isoformat() if trigger.from_state and trigger.from_state.last_changed else (now() - timedelta(hours=8)).isoformat() }}"
+          end_date_time: "{{ now().isoformat() }}"
 
   # =========================================================================
   # BRANCH 2: RUN PREDICTION (When prediction_trigger fires)
@@ -82,8 +83,8 @@ action:
         value_template: "{{ trigger.id != 'sleep_ended' }}"
     then:
       - variables:
-          t_date: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
-          t_day: "{{ (now() + timedelta(days=1)).strftime('%A') }}"
+          t_date: "{{ now().strftime('%Y-%m-%d') }}"
+          t_day: "{{ now().strftime('%A') }}"
 
       # Step 1: Fetch past 30 days of ACTUAL sleep events from calendar matching hashed prefix
       - action: calendar.get_events
@@ -94,7 +95,7 @@ action:
           end_date_time: "{{ now().strftime('%Y-%m-%d 23:59:59') }}"
         response_variable: past_events
 
-      # Step 2: Calculate 10th percentile with weekday filter and 3-day fallback
+      # Step 2: Calculate 10th percentile with weekday filter, 3-day fallback, and local timezone normalization
       - variables:
           calc: >
             {% set events = past_events[target_calendar].events if (past_events and target_calendar in past_events) else [] %}
@@ -104,8 +105,8 @@ action:
             {% set day_on = namespace(values=[]) %}
             {% set day_off = namespace(values=[]) %}
             {% for e in actuals %}
-              {% set start_dt = as_datetime(e.start) %}
-              {% set end_dt = as_datetime(e.end) %}
+              {% set start_dt = as_local(as_datetime(e.start)) %}
+              {% set end_dt = as_local(as_datetime(e.end)) %}
               {% if start_dt and start_dt.strftime('%A') == t_day %}
                 {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
                 {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
@@ -118,8 +119,8 @@ action:
               {% set fb_off = namespace(values=[]) %}
               {% set cutoff = now() - timedelta(days=3) %}
               {% for e in actuals %}
-                {% set start_dt = as_datetime(e.start) %}
-                {% set end_dt = as_datetime(e.end) %}
+                {% set start_dt = as_local(as_datetime(e.start)) %}
+                {% set end_dt = as_local(as_datetime(e.end)) %}
                 {% if start_dt and start_dt >= cutoff %}
                   {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
                   {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
@@ -156,7 +157,7 @@ action:
 
           calc_res: "{{ (calc | string).strip() | from_json(default={'on':'22:00','off':'07:00','samples':0}) }}"
 
-      # Step 3: Check if tomorrow's prediction already exists
+      # Step 3: Check if today's prediction already exists
       - action: calendar.get_events
         target:
           entity_id: !input target_calendar
@@ -183,11 +184,11 @@ action:
               start_date_time: >
                 {% set raw_start = as_datetime(t_date ~ ' ' ~ calc_res.on ~ ':00') %}
                 {% set offset = timedelta(hours=prediction_offset.get('hours', 0), minutes=prediction_offset.get('minutes', 0)) %}
-                {{ (raw_start - offset).strftime('%Y-%m-%d %H:%M:%S') }}
+                {{ (raw_start - offset).isoformat() }}
               end_date_time: >
                 {% set on_h = calc_res.on.split(':')[0] | int %}
                 {% set off_h = calc_res.off.split(':')[0] | int %}
-                {% set base_end_date = ((now() + timedelta(days=2)).strftime('%Y-%m-%d')) if (off_h <= on_h or calc_res.off < calc_res.on) else t_date %}
+                {% set base_end_date = (as_datetime(t_date ~ ' 00:00:00') + timedelta(days=1)).strftime('%Y-%m-%d') if (off_h <= on_h or calc_res.off < calc_res.on) else t_date %}
                 {% set raw_end = as_datetime(base_end_date ~ ' ' ~ calc_res.off ~ ':00') %}
                 {% set offset = timedelta(hours=prediction_offset.get('hours', 0), minutes=prediction_offset.get('minutes', 0)) %}
-                {{ (raw_end - offset).strftime('%Y-%m-%d %H:%M:%S') }}
+                {{ (raw_end - offset).isoformat() }}
