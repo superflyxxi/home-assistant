@@ -2,7 +2,7 @@ blueprint:
   name: Sleeping Tracker & Prediction Calendar
   description: >
     Logs actual sleep sessions when waking up and generates 10th percentile sleep predictions
-    for tonight/today, using a hashed entity ID prefix and proper local timezone handling.
+    for tonight/today, with configurable minimum sleep duration and advanced offset settings.
   domain: automation
   input:
     sleeping_sensor:
@@ -38,6 +38,17 @@ blueprint:
               enable_day: false
               enable_second: false
               enable_millisecond: false
+        min_sleep_duration:
+          name: Minimum Sleep Duration
+          description: Minimum duration for a sleep session to be included in predictions.
+          default:
+            hours: 2
+            minutes: 0
+          selector:
+            duration:
+              enable_day: false
+              enable_second: false
+              enable_millisecond: false
 
 triggers:
   - platform: state
@@ -52,6 +63,7 @@ action:
       sensor_entity: !input sleeping_sensor
       target_calendar: !input target_calendar
       prediction_offset: !input prediction_offset
+      min_sleep_duration: !input min_sleep_duration
       
       # Generate a short, unique 6-character hash from the entity ID using the md5 filter
       sensor_hash: "{{ (sensor_entity | md5)[:6] }}"
@@ -95,47 +107,62 @@ action:
           end_date_time: "{{ now().strftime('%Y-%m-%d 23:59:59') }}"
         response_variable: past_events
 
-      # Step 2: Calculate 10th percentile with weekday filter, 3-day fallback, and local timezone normalization
+      # Step 2: Calculate 10th percentile using configurable minimum sleep duration threshold
       - variables:
           calc: >
             {% set events = past_events[target_calendar].events if (past_events and target_calendar in past_events) else [] %}
             {% set actuals = events | selectattr('summary', 'eq', actual_summary) | list %}
             
+            {% set min_sec = (min_sleep_duration.get('hours', 0) | int * 3600) + (min_sleep_duration.get('minutes', 0) | int * 60) + (min_sleep_duration.get('seconds', 0) | int) %}
+            
+            {% set res = namespace(on=[], off=[], desc=[], fallback=false) %}
+            
             {# Try matching weekday first #}
-            {% set day_on = namespace(values=[]) %}
+            {% set day_on = namespace(values=[], desc=[]) %}
             {% set day_off = namespace(values=[]) %}
             {% for e in actuals %}
               {% set start_dt = as_local(as_datetime(e.start)) %}
               {% set end_dt = as_local(as_datetime(e.end)) %}
-              {% if start_dt and start_dt.strftime('%A') == t_day %}
-                {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
-                {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+              {% if start_dt and end_dt %}
+                {% set duration = (end_dt - start_dt).total_seconds() %}
+                {% if duration >= min_sec and start_dt.strftime('%A') == t_day %}
+                  {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
+                  {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                  {% set day_on.desc = day_on.desc + [start_dt.strftime('%Y-%m-%d %H:%M') ~ ' to ' ~ end_dt.strftime('%H:%M')] %}
+                {% endif %}
               {% endif %}
             {% endfor %}
             
-            {# Fallback to past 3 days if no data for this weekday #}
-            {% if day_on.values | length == 0 %}
-              {% set fb_on = namespace(values=[]) %}
+            {% if day_on.values | length > 0 %}
+              {% set res.on = day_on.values %}
+              {% set res.off = day_off.values %}
+              {% set res.desc = day_on.desc %}
+              {% set res.fallback = false %}
+            {% else %}
+              {% set res.fallback = true %}
+              {% set fb_on = namespace(values=[], desc=[]) %}
               {% set fb_off = namespace(values=[]) %}
               {% set cutoff = now() - timedelta(days=3) %}
               {% for e in actuals %}
                 {% set start_dt = as_local(as_datetime(e.start)) %}
                 {% set end_dt = as_local(as_datetime(e.end)) %}
-                {% if start_dt and start_dt >= cutoff %}
-                  {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
-                  {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                {% if start_dt and end_dt %}
+                  {% set duration = (end_dt - start_dt).total_seconds() %}
+                  {% if duration >= min_sec and start_dt >= cutoff %}
+                    {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
+                    {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                    {% set fb_on.desc = fb_on.desc + [start_dt.strftime('%Y-%m-%d %H:%M') ~ ' to ' ~ end_dt.strftime('%H:%M')] %}
+                  {% endif %}
                 {% endif %}
               {% endfor %}
-              {% set final_on = fb_on.values %}
-              {% set final_off = fb_off.values %}
-            {% else %}
-              {% set final_on = day_on.values %}
-              {% set final_off = day_off.values %}
+              {% set res.on = fb_on.values %}
+              {% set res.off = fb_off.values %}
+              {% set res.desc = fb_on.desc %}
             {% endif %}
             
             {# --- 10th Percentile Bedtime (ON) --- #}
-            {% if final_on | length > 0 %}
-              {% set s_on = final_on | sort %}
+            {% if res.on | length > 0 %}
+              {% set s_on = res.on | sort %}
               {% set idx_on = (((10 / 100) * (s_on | length - 1)) | round(0, 'common')) | int %}
               {% set idx_on = [0, [idx_on, s_on | length - 1] | min] | max %}
               {% set on_time = '%02d:%02d' | format(s_on[idx_on] // 3600, (s_on[idx_on] % 3600) // 60) %}
@@ -144,8 +171,8 @@ action:
             {% endif %}
             
             {# --- 10th Percentile Wake Time (OFF) --- #}
-            {% if final_off | length > 0 %}
-              {% set s_off = final_off | sort %}
+            {% if res.off | length > 0 %}
+              {% set s_off = res.off | sort %}
               {% set idx_off = (((10 / 100) * (s_off | length - 1)) | round(0, 'common')) | int %}
               {% set idx_off = [0, [idx_off, s_off | length - 1] | min] | max %}
               {% set off_time = '%02d:%02d' | format(s_off[idx_off] // 3600, (s_off[idx_off] % 3600) // 60) %}
@@ -153,21 +180,32 @@ action:
               {% set off_time = '07:00' %}
             {% endif %}
             
-            {{ {'on': on_time, 'off': off_time, 'samples': final_on | length} | to_json }}
+            {{ {'on': on_time, 'off': off_time, 'samples': res.on | length, 'considered': res.desc, 'fallback': res.fallback} | to_json }}
 
-          calc_res: "{{ (calc | string).strip() | from_json(default={'on':'22:00','off':'07:00','samples':0}) }}"
+          calc_res: "{{ (calc | string).strip() | from_json(default={'on':'22:00','off':'07:00','samples':0,'considered':[],'fallback':false}) }}"
 
-      # Step 3: Check if today's prediction already exists
+      # Step 3: Check if today's prediction already exists (matching exact start date)
       - action: calendar.get_events
         target:
           entity_id: !input target_calendar
         data:
           start_date_time: "{{ t_date ~ ' 00:00:00' }}"
-          end_date_time: "{{ t_date ~ ' 23:59:59' }}"
+          end_date_time: "{{ (as_datetime(t_date ~ ' 00:00:00') + timedelta(days=1)).strftime('%Y-%m-%d 23:59:59') }}"
         response_variable: tomorrow_events
 
       - variables:
-          tomorrow_list: "{{ tomorrow_events[target_calendar].events | selectattr('summary', 'eq', predicted_summary) | list if tomorrow_events and target_calendar in tomorrow_events else [] }}"
+          tomorrow_list: >
+            {% set events = tomorrow_events[target_calendar].events if (tomorrow_events and target_calendar in tomorrow_events) else [] %}
+            {% set matching = namespace(list=[]) %}
+            {% for e in events %}
+              {% if e.summary == predicted_summary %}
+                {% set start_dt = as_local(as_datetime(e.start)) %}
+                {% if start_dt.strftime('%Y-%m-%d') == t_date %}
+                  {% set matching.list = matching.list + [e] %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ matching.list }}
 
       # Step 4: Write new Predicted Sleep event only if it doesn't already exist
       - if:
@@ -180,7 +218,12 @@ action:
             data:
               summary: "{{ predicted_summary }}"
               description: >
-                Calculated dynamically from {{ calc_res.samples }} actual sleep calendar logs (weekday match or past 3-day fallback) for {{ t_day }}.
+                Calculated dynamically from {{ calc_res.samples }} actual sleep calendar log(s) ({% if calc_res.fallback %}past 3-day fallback{% else %}matching weekday: {{ t_day }}{% endif %}).
+
+                Considered sessions:
+                {% for item in calc_res.considered %}
+                - {{ item }}
+                {% endfor %}
               start_date_time: >
                 {% set raw_start = as_datetime(t_date ~ ' ' ~ calc_res.on ~ ':00') %}
                 {% set offset = timedelta(hours=prediction_offset.get('hours', 0), minutes=prediction_offset.get('minutes', 0)) %}
