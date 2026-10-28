@@ -1,8 +1,8 @@
 blueprint:
   name: Sleeping Tracker & Prediction Calendar
   description: >
-    Logs actual sleep sessions when waking up and generates 10th percentile sleep predictions
-    for tonight/today, with configurable minimum sleep duration and advanced offset settings.
+    Logs actual sleep sessions when waking up (enforcing minimum duration) and generates 
+    10th percentile sleep predictions for tonight/today.
   domain: automation
   input:
     sleeping_sensor:
@@ -40,7 +40,7 @@ blueprint:
               enable_millisecond: false
         min_sleep_duration:
           name: Minimum Sleep Duration
-          description: Minimum duration for a sleep session to be included in predictions.
+          description: Minimum duration for a sleep session to be recorded in the calendar.
           default:
             hours: 2
             minutes: 0
@@ -72,20 +72,30 @@ action:
       predicted_summary: "{{ 'Sleep [' ~ sensor_hash ~ '] - Predicted' }}"
 
   # =========================================================================
-  # BRANCH 1: LOG ACTUAL SLEEP SESSION (When waking up)
+  # BRANCH 1: LOG ACTUAL SLEEP SESSION (When waking up, enforcing min duration)
   # =========================================================================
   - if:
       - condition: template
         value_template: "{{ trigger.id == 'sleep_ended' }}"
     then:
-      - action: calendar.create_event
-        target:
-          entity_id: !input target_calendar
-        data:
-          summary: "{{ actual_summary }}"
-          description: "Actual sleep logged automatically for entity: {{ sensor_entity }}"
-          start_date_time: "{{ as_local(trigger.from_state.last_changed).isoformat() if trigger.from_state and trigger.from_state.last_changed else (now() - timedelta(hours=8)).isoformat() }}"
-          end_date_time: "{{ now().isoformat() }}"
+      - variables:
+          actual_start: "{{ as_datetime(trigger.from_state.last_changed) if (trigger.from_state and trigger.from_state.last_changed) else (now() - timedelta(hours=8)) }}"
+          actual_end: "{{ now() }}"
+          actual_duration: "{{ (actual_end - actual_start).total_seconds() }}"
+          min_sec: "{{ (min_sleep_duration.get('hours', 0) | int * 3600) + (min_sleep_duration.get('minutes', 0) | int * 60) + (min_sleep_duration.get('seconds', 0) | int) }}"
+
+      - if:
+          - condition: template
+            value_template: "{{ actual_duration >= min_sec }}"
+        then:
+          - action: calendar.create_event
+            target:
+              entity_id: !input target_calendar
+            data:
+              summary: "{{ actual_summary }}"
+              description: "Actual sleep logged automatically for entity: {{ sensor_entity }}"
+              start_date_time: "{{ as_local(actual_start).isoformat() }}"
+              end_date_time: "{{ actual_end.isoformat() }}"
 
   # =========================================================================
   # BRANCH 2: RUN PREDICTION (When prediction_trigger fires)
@@ -107,13 +117,11 @@ action:
           end_date_time: "{{ now().strftime('%Y-%m-%d 23:59:59') }}"
         response_variable: past_events
 
-      # Step 2: Calculate 10th percentile using configurable minimum sleep duration threshold
+      # Step 2: Calculate 10th percentile using all recorded valid sleep sessions
       - variables:
           calc: >
             {% set events = past_events[target_calendar].events if (past_events and target_calendar in past_events) else [] %}
             {% set actuals = events | selectattr('summary', 'eq', actual_summary) | list %}
-            
-            {% set min_sec = (min_sleep_duration.get('hours', 0) | int * 3600) + (min_sleep_duration.get('minutes', 0) | int * 60) + (min_sleep_duration.get('seconds', 0) | int) %}
             
             {% set res = namespace(on=[], off=[], desc=[], fallback=false) %}
             
@@ -123,13 +131,10 @@ action:
             {% for e in actuals %}
               {% set start_dt = as_local(as_datetime(e.start)) %}
               {% set end_dt = as_local(as_datetime(e.end)) %}
-              {% if start_dt and end_dt %}
-                {% set duration = (end_dt - start_dt).total_seconds() %}
-                {% if duration >= min_sec and start_dt.strftime('%A') == t_day %}
-                  {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
-                  {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
-                  {% set day_on.desc = day_on.desc + [start_dt.strftime('%Y-%m-%d %H:%M') ~ ' to ' ~ end_dt.strftime('%H:%M')] %}
-                {% endif %}
+              {% if start_dt and end_dt and start_dt.strftime('%A') == t_day %}
+                {% set day_on.values = day_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
+                {% set day_off.values = day_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                {% set day_on.desc = day_on.desc + [start_dt.strftime('%Y-%m-%d %H:%M') ~ ' to ' ~ end_dt.strftime('%H:%M')] %}
               {% endif %}
             {% endfor %}
             
@@ -146,13 +151,10 @@ action:
               {% for e in actuals %}
                 {% set start_dt = as_local(as_datetime(e.start)) %}
                 {% set end_dt = as_local(as_datetime(e.end)) %}
-                {% if start_dt and end_dt %}
-                  {% set duration = (end_dt - start_dt).total_seconds() %}
-                  {% if duration >= min_sec and start_dt >= cutoff %}
-                    {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
-                    {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
-                    {% set fb_on.desc = fb_on.desc + [start_dt.strftime('%Y-%m-%d %H:%M') ~ ' to ' ~ end_dt.strftime('%H:%M')] %}
-                  {% endif %}
+                {% if start_dt and end_dt and start_dt >= cutoff %}
+                  {% set fb_on.values = fb_on.values + [start_dt.hour * 3600 + start_dt.minute * 60 + start_dt.second] %}
+                  {% set fb_off.values = fb_off.values + [end_dt.hour * 3600 + end_dt.minute * 60 + end_dt.second] %}
+                  {% set fb_on.desc = fb_on.desc + [start_dt.strftime('%Y-%m-%d %H:%M') ~ ' to ' ~ end_dt.strftime('%H:%M')] %}
                 {% endif %}
               {% endfor %}
               {% set res.on = fb_on.values %}
@@ -190,7 +192,7 @@ action:
           entity_id: !input target_calendar
         data:
           start_date_time: "{{ t_date ~ ' 00:00:00' }}"
-          end_date_time: "{{ (as_datetime(t_date ~ ' 00:00:00') + timedelta(days=1)).strftime('%Y-%m-%d 23:59:59') }}"
+          end_date_time: "{{ (as_datetime(t_date ~ ' 00:00:00') + timedelta(days=1)).strftime('%Y-%m-%d 23:59:59' )}}"
         response_variable: tomorrow_events
 
       - variables:
