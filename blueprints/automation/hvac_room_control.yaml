@@ -171,19 +171,24 @@ blueprint:
               step: 1
               unit_of_measurement: "°F"
               mode: slider
-    duration_between_executions:
-      name: Duration Between Executions
-      description: >-
-        The amount of time between automation executions. This ensures when changes happen quickly, the system
-        doesn't get overwhelmed with actions. Note: the queue depth is 10.
-      default:
-        hours: 0
-        minutes: 1
-      selector:
-        duration:
-          enable_day: false
-          enable_second: false
-          enable_millisecond: false
+    advanced_inputs:
+      name: "Advanced"
+      description: "Advanced settings"
+      collapsed: true
+      input:
+        duration_between_executions:
+          name: Duration Between Executions
+          description: >-
+            The amount of time between automation executions. This ensures when changes happen quickly, the system
+            doesn't get overwhelmed with actions. Note: the queue depth is 10.
+          default:
+            hours: 0
+            minutes: 1
+          selector:
+            duration:
+              enable_day: false
+              enable_second: false
+              enable_millisecond: false
 mode: queued
 max: 10
 variables:
