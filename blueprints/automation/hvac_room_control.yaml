@@ -5,64 +5,53 @@ blueprint:
     HVAC modes and setpoints for a single specified area.
   domain: automation
   input:
-    trigger_inputs:
-      name: "Minimum"
-      description: "Minimum configurations and triggers"
-      collapsed: false
-      input:
-        target_climate:
-          name: Target climate
-          description: The target climate control to set.
-          selector:
-            entity:
-              domain: climate
-        hvac_mode_select:
-          name: HVAC Mode Input Select
-          description: The input select controlling the automation mode (Off, Auto, Guest, Away, Home).
-          selector:
-            entity:
-              domain: input_select
-        outdoor_temp_sensor:
-          name: Outdoor Temperature Sensor
-          description: Sensor used to monitor current outdoor temperature to determine heat/cool/mid modes.
-          selector:
-            entity:
-              domain: sensor
-              device_class: temperature
-        required_entities:
-          name: Required Entities
-          description: Entities that when any are "on" will result in the room being active.
-          selector:
-            entity:
-              multiple: true
-        active_entities:
-          name: Active Entities
-          description: Once Required Entities conditions are met and any of these Active Entities are "on", the climate will be active.
-          default: []
-          selector:
-            entity:
-              multiple: true
-        home_persons:
-          name: Home Persons
-          description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
-          default: []
-          selector:
-            entity:
-              domain: person
-              multiple: true
-        sleeping_sensors:
-          name: Sleeping Sensors
-          description: Select sleeping sensors that determine whether anyone in the room is sleeping (sensor "on") and to set target sleep temperatures.
-          default: []
-          selector:
-            entity:
-              multiple: true
-        other_trigger:
-          name: Other Trigger
-          description: Any other trigger like time of day or other schedule.
-          default: []
-          selector:
-            trigger: {}
+    target_climate:
+      name: Target climate
+      description: The target climate control to set.
+      selector:
+        entity:
+          domain: climate
+    hvac_mode_select:
+      name: HVAC Mode Input Select
+      description: The input select controlling the automation mode (Off, Auto, Guest, Away, Home).
+      selector:
+        entity:
+          domain: input_select
+    outdoor_temp_sensor:
+      name: Outdoor Temperature Sensor
+      description: Sensor used to monitor current outdoor temperature to determine heat/cool/mid modes.
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+    required_entities:
+      name: Required Entities
+      description: Entities that when any are "on" will result in the room being active.
+      selector:
+        entity:
+          multiple: true
+    active_entities:
+      name: Active Entities
+      description: Once Required Entities conditions are met and any of these Active Entities are "on", the climate will be active.
+      default: []
+      selector:
+        entity:
+          multiple: true
+    home_persons:
+      name: Home Persons
+      description: Select persons required to be "home" for active HVAC mode (if none are home, defaults to inactive).
+      default: []
+      selector:
+        entity:
+          domain: person
+          multiple: true
+    sleeping_sensors:
+      name: Sleeping Sensors
+      description: Select sleeping sensors that determine whether anyone in the room is sleeping (sensor "on") and to set target sleep temperatures.
+      default: []
+      selector:
+        entity:
+          multiple: true
     enable_guest:
       name: Enable Guest Mode
       description: When enabled and Guest mode is activated, the target climate will not change.
@@ -176,6 +165,12 @@ blueprint:
       description: "Advanced settings"
       collapsed: true
       input:
+        other_trigger:
+          name: Other Trigger
+          description: Any other trigger like time of day or other schedule.
+          default: []
+          selector:
+            trigger: {}
         duration_between_executions:
           name: Duration Between Executions
           description: >-
