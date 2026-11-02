@@ -298,7 +298,7 @@ variables:
   #   otherwise, continue
   override_desired_state: >-
     {% if target_temp_action == 'Turn Off'
-      and current_state in ['off', desired_hvac_mode]
+      and (current_state in ['off', desired_hvac_mode] or desired_hvac_mode == 'mid')
       and (enable_temp_action_sleep or not is_sleeping)
       and desired_target_temp == current_target_temp %}
       {% if desired_hvac_mode == 'heat' %}
